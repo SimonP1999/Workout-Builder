@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TransformHub"><meta name="mobile-web-app-capable" content="yes"><meta name="theme-color" content="#0E1117">
+<title>TransformHub</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}body{background:#0E1117;color:#E6EDF3;font-family:sans-serif;-webkit-font-smoothing:antialiased;overscroll-behavior:none}textarea{font-family:'DM Sans',-apple-system,sans-serif}input,select,textarea{font-size:16px}</style>
+</head>
+<body>
+<div id="error" style="display:none;padding:20px;color:#F85149;white-space:pre-wrap;font-family:monospace;font-size:12px"></div>
+<div id="root"></div>
+<script id="app-code" type="text/plain">
+const T={bg:"#0E1117",surface:"#161B22",card:"#1C2333",border:"#2A3441",blue:"#0A8FD0",blueGlow:"rgba(10,143,208,0.15)",white:"#E6EDF3",text:"#C9D1D9",textMuted:"#8B949E",textDim:"#484F58",green:"#2EA043",greenGlow:"rgba(46,160,67,0.12)",orange:"#D29922",orangeGlow:"rgba(210,153,34,0.12)",red:"#F85149",redGlow:"rgba(248,81,73,0.1)",yellow:"#E3B341"};
+const font="'DM Sans',-apple-system,sans-serif",mono="'JetBrains Mono',monospace";
+const copyToClip=(text)=>{
+  if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}
+  const ta=document.createElement("textarea");ta.value=text;ta.style.cssText="position:fixed;left:-9999px";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);return Promise.resolve();
+};
+const LS={get(k,d){try{const v=localStorage.getItem("th_"+k);return v?JSON.parse(v):d;}catch{return d;}},set(k,v){try{localStorage.setItem("th_"+k,JSON.stringify(v));}catch{}}};
+const DEFAULT_ZONES=[
+  {id:"z1",name:"Sled Area",order:1},
+  {id:"z2",name:"Cage / Rack Area",order:2},
+  {id:"z3",name:"Barbell / Bench Area",order:3},
+  {id:"z4",name:"Dumbbell Area",order:4},
+  {id:"z5",name:"Kettlebell Area",order:5},
+  {id:"z6",name:"TRX / Bodyweight Area",order:6},
+  {id:"z7",name:"Mat / Floor Area",order:7},
+  {id:"z8",name:"Medicine Ball / Slam Area",order:8},
+  {id:"z9",name:"Plyo / Step Area",order:9},
+  {id:"z10",name:"Rower Area",order:10},
+  {id:"z11",name:"SkiErg Area",order:11},
+];
+
+// Auto-assign zones based on primary equipment
+const autoZone=(eq)=>{
+  if(!eq||!eq.length)return"z7";
+  const e=eq[0];
+  if(e==="Sled")return"z1";if(e==="Cage/Rack"||e==="Barbell")return"z2";
+  if(e==="Bench")return"z3";if(e==="Dumbbells")return"z4";if(e==="Kettlebell")return"z5";
+  if(e==="TRX"||e==="Bodyweight"||e==="Resistance Band")return"z6";
+  if(e==="Mat")return"z7";if(e==="Medicine Ball"||e==="Slam Ball")return"z8";
+  if(e==="Plyo Box"||e==="Step Platform"||e==="Cones")return"z9";
+  if(e==="Rower")return"z10";if(e==="SkiErg")return"z11";if(e==="Log")return"z3";
+  return"z7";
+};
+
+const EQUIPMENT=["Bodyweight","Dumbbells","Barbell","Kettlebell","TRX","Sled","Medicine Ball","Slam Ball","Bench","Plyo Box","Step Platform","Mat","Rower","SkiErg","Log","Cones","Cage/Rack","Resistance Band"];
+const CATEGORIES={"Lower Body":["Push (Squats/Lunges)","Pull (Hinge/Deadlift)","Calves","Cardio/Plyometric"],"Upper Body":["Chest","Back","Shoulders","Biceps","Triceps","Cardio/Compound"],"Core":["Anti-Extension","Anti-Rotation","Flexion","Rotation"]};
+const mk=(n,c,s,eq,tp,r=3)=>({id:`${c}-${s}-${n}`.replace(/[^a-zA-Z0-9]/g,"-").toLowerCase(),name:n,category:c,subcategory:s,equipment:eq,type:tp,rating:r,usedCount:0,lastUsed:null,zone:autoZone(eq),zoneOrder:0});
+const INIT_EX = [
+  mk("Barbell Back Squat","Lower Body","Push (Squats/Lunges)",["Barbell","Cage/Rack"],"resistance",4),
+  mk("Goblet Squat","Lower Body","Push (Squats/Lunges)",["Kettlebell"],"resistance",4),
+  mk("Bulgarian Split Squat","Lower Body","Push (Squats/Lunges)",["Dumbbells","Bench"],"resistance",4),
+  mk("Walking Lunges","Lower Body","Push (Squats/Lunges)",["Dumbbells"],"resistance",4),
+  mk("Reverse Lunges","Lower Body","Push (Squats/Lunges)",["Dumbbells"],"resistance",3),
+  mk("Lateral Lunges","Lower Body","Push (Squats/Lunges)",["Dumbbells"],"resistance",3),
+  mk("Step Ups","Lower Body","Push (Squats/Lunges)",["Step Platform","Dumbbells"],"resistance",3),
+  mk("Sumo Squat","Lower Body","Push (Squats/Lunges)",["Kettlebell"],"resistance",3),
+  mk("Wall Sit","Lower Body","Push (Squats/Lunges)",["Bodyweight"],"resistance",3),
+  mk("Squat to Press","Lower Body","Push (Squats/Lunges)",["Dumbbells"],"resistance",4),
+  mk("Barbell Thruster","Lower Body","Push (Squats/Lunges)",["Barbell"],"resistance",4),
+  mk("Sled Push","Lower Body","Push (Squats/Lunges)",["Sled"],"cardio",5),
+  mk("Jump Squats","Lower Body","Push (Squats/Lunges)",["Bodyweight"],"cardio",3),
+  mk("Barbell Front Squat","Lower Body","Push (Squats/Lunges)",["Barbell","Cage/Rack"],"resistance",3),
+  mk("Kettlebell Thruster","Lower Body","Push (Squats/Lunges)",["Kettlebell"],"resistance",3),
+  mk("Barbell Deadlift","Lower Body","Pull (Hinge/Deadlift)",["Barbell"],"resistance",4),
+  mk("Romanian Deadlift (BB)","Lower Body","Pull (Hinge/Deadlift)",["Barbell"],"resistance",4),
+  mk("Romanian Deadlift (DB)","Lower Body","Pull (Hinge/Deadlift)",["Dumbbells"],"resistance",4),
+  mk("Single Leg RDL","Lower Body","Pull (Hinge/Deadlift)",["Dumbbells"],"resistance",3),
+  mk("Kettlebell Swing","Lower Body","Pull (Hinge/Deadlift)",["Kettlebell"],"cardio",5),
+  mk("Kettlebell Deadlift","Lower Body","Pull (Hinge/Deadlift)",["Kettlebell"],"resistance",3),
+  mk("Hip Thrust (Barbell)","Lower Body","Pull (Hinge/Deadlift)",["Barbell","Bench"],"resistance",4),
+  mk("Glute Bridge","Lower Body","Pull (Hinge/Deadlift)",["Mat"],"resistance",3),
+  mk("Sled Pull","Lower Body","Pull (Hinge/Deadlift)",["Sled"],"cardio",4),
+  mk("Kettlebell Clean","Lower Body","Pull (Hinge/Deadlift)",["Kettlebell"],"resistance",3),
+  mk("Kettlebell Snatch","Lower Body","Pull (Hinge/Deadlift)",["Kettlebell"],"cardio",3),
+  mk("Standing Calf Raises","Lower Body","Calves",["Dumbbells","Step Platform"],"resistance",3),
+  mk("Single Leg Calf Raise","Lower Body","Calves",["Step Platform"],"resistance",3),
+  mk("Pogo Hops","Lower Body","Calves",["Bodyweight"],"cardio",2),
+  mk("Box Jumps","Lower Body","Cardio/Plyometric",["Plyo Box"],"cardio",4),
+  mk("Speed Skaters","Lower Body","Cardio/Plyometric",["Bodyweight"],"cardio",4),
+  mk("High Knees","Lower Body","Cardio/Plyometric",["Bodyweight"],"cardio",3),
+  mk("Mountain Climbers","Lower Body","Cardio/Plyometric",["Mat"],"cardio",4),
+  mk("Burpees","Lower Body","Cardio/Plyometric",["Bodyweight"],"cardio",4),
+  mk("Shuttle Runs","Lower Body","Cardio/Plyometric",["Cones"],"cardio",3),
+  mk("Rower Sprint","Lower Body","Cardio/Plyometric",["Rower"],"cardio",5),
+  mk("SkiErg Sprint","Lower Body","Cardio/Plyometric",["SkiErg"],"cardio",4),
+  mk("Sled Sprint","Lower Body","Cardio/Plyometric",["Sled"],"cardio",5),
+  mk("Bear Crawls","Lower Body","Cardio/Plyometric",["Mat"],"cardio",3),
+  mk("Tuck Jumps","Lower Body","Cardio/Plyometric",["Bodyweight"],"cardio",3),
+  mk("Broad Jumps","Lower Body","Cardio/Plyometric",["Bodyweight"],"cardio",3),
+  mk("Barbell Bench Press","Upper Body","Chest",["Barbell","Bench","Cage/Rack"],"resistance",4),
+  mk("Dumbbell Bench Press","Upper Body","Chest",["Dumbbells","Bench"],"resistance",4),
+  mk("Incline DB Press","Upper Body","Chest",["Dumbbells","Bench"],"resistance",4),
+  mk("Push Ups","Upper Body","Chest",["Mat"],"resistance",4),
+  mk("TRX Chest Press","Upper Body","Chest",["TRX"],"resistance",3),
+  mk("Diamond Push Ups","Upper Body","Chest",["Mat"],"resistance",3),
+  mk("DB Flyes","Upper Body","Chest",["Dumbbells","Bench"],"resistance",3),
+  mk("Floor Press","Upper Body","Chest",["Dumbbells","Mat"],"resistance",3),
+  mk("Log Press","Upper Body","Chest",["Log"],"resistance",3),
+  mk("BB Bent Over Row","Upper Body","Back",["Barbell"],"resistance",4),
+  mk("DB Single Arm Row","Upper Body","Back",["Dumbbells","Bench"],"resistance",4),
+  mk("TRX Row","Upper Body","Back",["TRX"],"resistance",4),
+  mk("Renegade Rows","Upper Body","Back",["Dumbbells","Mat"],"resistance",4),
+  mk("KB Row","Upper Body","Back",["Kettlebell"],"resistance",3),
+  mk("Gorilla Row","Upper Body","Back",["Kettlebell"],"resistance",3),
+  mk("Inverted Row","Upper Body","Back",["Barbell","Cage/Rack"],"resistance",3),
+  mk("Rower Endurance","Upper Body","Back",["Rower"],"cardio",4),
+  mk("Face Pulls","Upper Body","Back",["Resistance Band"],"resistance",3),
+  mk("DB Shoulder Press","Upper Body","Shoulders",["Dumbbells"],"resistance",4),
+  mk("BB Overhead Press","Upper Body","Shoulders",["Barbell","Cage/Rack"],"resistance",4),
+  mk("Arnold Press","Upper Body","Shoulders",["Dumbbells"],"resistance",3),
+  mk("Lateral Raises","Upper Body","Shoulders",["Dumbbells"],"resistance",4),
+  mk("Front Raises","Upper Body","Shoulders",["Dumbbells"],"resistance",3),
+  mk("Pike Push Ups","Upper Body","Shoulders",["Mat"],"resistance",3),
+  mk("Med Ball Overhead Slam","Upper Body","Shoulders",["Slam Ball"],"cardio",4),
+  mk("Wall Ball Shots","Upper Body","Shoulders",["Medicine Ball"],"cardio",4),
+  mk("DB Bicep Curl","Upper Body","Biceps",["Dumbbells"],"resistance",4),
+  mk("Hammer Curls","Upper Body","Biceps",["Dumbbells"],"resistance",3),
+  mk("BB Bicep Curl","Upper Body","Biceps",["Barbell"],"resistance",3),
+  mk("TRX Bicep Curl","Upper Body","Biceps",["TRX"],"resistance",3),
+  mk("Tricep Dips","Upper Body","Triceps",["Bench"],"resistance",3),
+  mk("Skull Crushers","Upper Body","Triceps",["Barbell","Bench"],"resistance",3),
+  mk("OH Tricep Extension","Upper Body","Triceps",["Dumbbells"],"resistance",3),
+  mk("Close Grip Push Ups","Upper Body","Triceps",["Mat"],"resistance",3),
+  mk("TRX Tricep Extension","Upper Body","Triceps",["TRX"],"resistance",3),
+  mk("Med Ball Slams","Upper Body","Cardio/Compound",["Slam Ball"],"cardio",5),
+  mk("SkiErg","Upper Body","Cardio/Compound",["SkiErg"],"cardio",4),
+  mk("Man Makers","Upper Body","Cardio/Compound",["Dumbbells"],"cardio",4),
+  mk("Devil Press","Upper Body","Cardio/Compound",["Dumbbells"],"cardio",4),
+  mk("KB Clean & Press","Upper Body","Cardio/Compound",["Kettlebell"],"cardio",3),
+  mk("Plank","Core","Anti-Extension",["Mat"],"resistance",4),
+  mk("Plank Shoulder Taps","Core","Anti-Extension",["Mat"],"resistance",3),
+  mk("Dead Bug","Core","Anti-Extension",["Mat"],"resistance",4),
+  mk("TRX Fallout","Core","Anti-Extension",["TRX"],"resistance",3),
+  mk("Bear Crawl Hold","Core","Anti-Extension",["Mat"],"resistance",3),
+  mk("Pallof Press","Core","Anti-Rotation",["Resistance Band"],"resistance",4),
+  mk("SA Farmer Carry","Core","Anti-Rotation",["Kettlebell"],"resistance",3),
+  mk("Bird Dog","Core","Anti-Rotation",["Mat"],"resistance",3),
+  mk("Bicycle Crunches","Core","Flexion",["Mat"],"cardio",3),
+  mk("V-Ups","Core","Flexion",["Mat"],"resistance",3),
+  mk("Leg Raises","Core","Flexion",["Mat"],"resistance",3),
+  mk("Flutter Kicks","Core","Flexion",["Mat"],"cardio",3),
+  mk("Reverse Crunches","Core","Flexion",["Mat"],"resistance",3),
+  mk("Hanging Knee Raises","Core","Flexion",["Cage/Rack"],"resistance",3),
+  mk("Russian Twists","Core","Rotation",["Medicine Ball","Mat"],"resistance",4),
+  mk("Med Ball Rot Throw","Core","Rotation",["Medicine Ball"],"cardio",4),
+  mk("Woodchops","Core","Rotation",["Dumbbells"],"resistance",3),
+  mk("Landmine Rotation","Core","Rotation",["Barbell"],"resistance",3),
+];
+const INIT_FMT = [
+  {id:"circuit",name:"Full Circuit",desc:"All exercises in sequence, repeat for rounds",icon:"🔄",
+    how:"Set up all exercises in a loop. Everyone starts together and moves through each exercise one by one. After completing all exercises, rest, then go again for the next round. Demo all exercises before starting. Default settings give ~21 min of work.",
+    rating:3, hasMode:false, params:{mode:"timed",exercises:8,rounds:3,workTime:35,restTime:10,roundRest:60,reps:12},
+    fields:[
+      {k:"exercises",l:"Exercises",min:6,max:16,g:"Structure"},
+      {k:"rounds",l:"Rounds",min:1,max:5,g:"Structure"},
+      {k:"workTime",l:"Work (s)",min:20,max:60,step:5,g:"Effort"},
+      {k:"restTime",l:"Rest Between Ex (s)",min:5,max:30,step:5,g:"Rest"},
+      {k:"roundRest",l:"Rest Between Rounds (s)",min:30,max:120,step:15,g:"Rest"},
+    ]},
+  {id:"stations",name:"Station Circuit",desc:"Grouped stations, rotate through each",icon:"🏋️",
+    how:"Split exercises into stations around the gym. Divide the class into groups — one group per station. Each group completes all exercises at their station for the set laps, then rotates to the next station. Rest between stations.",
+    rating:3, hasMode:false, params:{mode:"timed",stations:3,exPerStn:4,laps:2,workTime:35,restTime:10,stnRest:45,reps:12},
+    fields:[
+      {k:"stations",l:"Stations",min:2,max:6,g:"Structure"},
+      {k:"exPerStn",l:"Exercises / Station",min:2,max:6,g:"Structure"},
+      {k:"laps",l:"Laps of Each Station",min:1,max:4,g:"Structure"},
+      {k:"workTime",l:"Work (s)",min:20,max:60,step:5,g:"Effort"},
+      {k:"restTime",l:"Rest Between Ex (s)",min:5,max:30,step:5,g:"Rest"},
+      {k:"stnRest",l:"Rest Between Stations (s)",min:15,max:90,step:15,g:"Rest"},
+    ]},
+  {id:"tabata",name:"Tabata",desc:"High intensity timed intervals — always timed",icon:"⚡",
+    how:"One exercise at a time, max effort. Work for the set time, rest briefly, repeat for the set rounds on that exercise, then move to the next. Keep transitions fast. Use a Tabata timer app. Best with simple bodyweight or single-equipment moves.",
+    rating:3, hasMode:false, params:{mode:"timed",exercises:6,workTime:20,restTime:10,tabRounds:8,tabSets:1,setRest:60},
+    fields:[
+      {k:"exercises",l:"Exercises",min:4,max:12,g:"Structure"},
+      {k:"tabRounds",l:"Rounds per Exercise",min:1,max:8,g:"Structure"},
+      {k:"tabSets",l:"How Many Times Through",min:1,max:4,g:"Structure"},
+      {k:"workTime",l:"Work (s)",min:15,max:40,step:5,g:"Effort"},
+      {k:"restTime",l:"Rest (s)",min:5,max:20,step:5,g:"Rest"},
+      {k:"setRest",l:"Rest Between Sets (s)",min:30,max:120,step:15,g:"Rest"},
+    ]},
+  {id:"amrap",name:"AMRAP",desc:"As many rounds as possible — always reps",icon:"🔥",
+    how:"Set up all exercises. Start the clock. Everyone works through the exercises in order doing the set reps each. When you finish the last exercise, go back to the first. Count total rounds completed when the timer goes. Great for competition.",
+    rating:3, hasMode:false, params:{mode:"reps",exercises:5,duration:20,reps:10},
+    fields:[
+      {k:"exercises",l:"Exercises",min:3,max:10,g:"Structure"},
+      {k:"reps",l:"Reps / Exercise",min:5,max:20,g:"Effort"},
+      {k:"duration",l:"Total Time (min)",min:5,max:30,g:"Timing"},
+    ]},
+  {id:"supersets",name:"Supersets / Trisets",desc:"Paired exercises performed back-to-back",icon:"💪",
+    how:"Group exercises into pairs (or triples). Perform all exercises in the pair back-to-back with no rest, then rest before repeating the pair. After all rounds of one pair, move to the next. Works well with push/pull pairings or upper/lower combos.",
+    rating:3, hasMode:false, params:{mode:"timed",pairs:4,exPerPair:2,rounds:3,reps:10,workTime:35,restTime:10,pairRest:45},
+    fields:[
+      {k:"pairs",l:"Number of Pairs",min:2,max:8,g:"Structure"},
+      {k:"exPerPair",l:"Exercises per Pair",min:2,max:3,g:"Structure"},
+      {k:"rounds",l:"Rounds per Pair",min:1,max:5,g:"Structure"},
+      {k:"workTime",l:"Work (s)",min:20,max:60,step:5,g:"Effort"},
+      {k:"restTime",l:"Rest Between Pairs (s)",min:0,max:30,step:5,g:"Rest"},
+      {k:"pairRest",l:"Rest Between Rounds (s)",min:15,max:90,step:15,g:"Rest"},
+    ]},
+  {id:"emom",name:"EMOM",desc:"Every Minute On the Minute — always reps",icon:"⏱️",
+    how:"At the start of every minute, perform the set reps of that minute's exercise. Whatever time is left in the minute is your rest. Rotate to the next exercise each minute. Faster you finish the reps, more rest you get. Keeps the class self-paced.",
+    rating:3, hasMode:false, params:{mode:"reps",exercises:6,duration:20,reps:10},
+    fields:[
+      {k:"exercises",l:"Exercises",min:3,max:12,g:"Structure"},
+      {k:"reps",l:"Reps per Minute",min:5,max:20,g:"Effort"},
+      {k:"duration",l:"Total Time (min)",min:6,max:30,g:"Timing"},
+    ]},
+  {id:"buyin",name:"Buy-In / Buy-Out",desc:"Bookend challenges around the main workout",icon:"🎫",
+    how:"Everyone starts with the buy-in challenge (e.g. 20 burpees) — you can't start the main workout until you finish. Then complete the main circuit. After the last round, hit the buy-out challenge to finish. Creates urgency at the start and a strong finish.",
+    rating:3, hasMode:false, params:{mode:"timed",exercises:6,rounds:3,reps:12,workTime:35,restTime:15,buyIn:30,buyOut:30},
+    fields:[
+      {k:"exercises",l:"Main Exercises",min:4,max:10,g:"Structure"},
+      {k:"rounds",l:"Rounds",min:1,max:4,g:"Structure"},
+      {k:"workTime",l:"Work (s)",min:20,max:60,step:5,g:"Effort"},
+      {k:"restTime",l:"Rest Between Ex (s)",min:5,max:30,step:5,g:"Rest"},
+      {k:"buyIn",l:"Buy-In Reps",min:10,max:50,step:5,g:"Bookends"},
+      {k:"buyOut",l:"Buy-Out Reps",min:10,max:50,step:5,g:"Bookends"},
+    ]},
+];
+const INIT_WU = [
+  {id:"w1",name:"Cone Tag",desc:"Set up cones scattered around the space. Pick one person as 'it'. Everyone jogs around the cones — if you get tagged, drop and do 3 burpees then rejoin. Switch the tagger every 30 seconds to keep it fresh. Call out 'new tagger!' to keep energy high.",dur:"2 min",minDur:2,maxDur:2,rating:4},
+  {id:"w2",name:"Musical Stations",desc:"Place equipment at 4-5 spots around the room with a card showing an exercise. Play music — everyone jogs around. When the music stops, sprint to the nearest station and do 5 reps. Restart music, jog again. Quick transitions, keep them moving.",dur:"2 min",minDur:2,maxDur:2,rating:4},
+  {id:"w3",name:"4 Corners",desc:"Label 4 corners of the gym (1-4). Assign a movement to each: 1=squats, 2=star jumps, 3=high knees, 4=lunges. Everyone jogs in the middle. Call a number — sprint to that corner and do 10 reps. Mix up the numbers, keep it unpredictable.",dur:"2-3 min",minDur:2,maxDur:3,rating:4},
+  {id:"w4",name:"Countdown Relay",desc:"Split into two even teams, lined up behind a cone. First person sprints to the far cone and does 10 star jumps, sprints back and tags the next person who does 9, then 8, then 7... First team to reach 0 wins. Loud counting, lots of encouragement.",dur:"2-3 min",minDur:2,maxDur:3,rating:5},
+  {id:"w5",name:"Traffic Lights",desc:"No equipment needed. Everyone jogs on the spot or around the room. Call out colours: GREEN = jog forward, AMBER = high knees on the spot, RED = drop to press up position and hold. Mix up the calls quickly. Throw in a 'REVERSE' for jogging backwards.",dur:"1-2 min",minDur:1,maxDur:2,rating:4},
+  {id:"w6",name:"Floor is Lava",desc:"Everyone jogs around the gym. Shout 'THE FLOOR IS LAVA!' — everyone must get both feet off the ground within 3 seconds (jump on a box, bench, step, anything). Last person to get off the ground does 5 burpees. Reset and go again.",dur:"1-2 min",minDur:1,maxDur:2,rating:5},
+  {id:"w7",name:"RPS Fitness",desc:"Pair everyone up. Each pair plays rock-paper-scissors. Loser immediately does 5 reps of whatever the winner chooses (squats, press ups, star jumps). Then find a new partner and go again. Keep it moving — no standing around chatting.",dur:"2 min",minDur:2,maxDur:2,rating:5},
+  {id:"w8",name:"Simon Says Fitness",desc:"Stand at the front. Call out exercises with 'Simon says' — squat, lunge, high knees, press up position. If you call one without 'Simon says' and someone does it, they owe 3 burpees. Go fast, catch people out. Gets laughs and gets the heart rate up.",dur:"1-2 min",minDur:1,maxDur:2,rating:4},
+  {id:"w9",name:"Partner Mirror",desc:"Pair up, face each other about 2m apart. One person leads with dynamic movements — lateral shuffles, high knees, squats, lunges. Partner must mirror everything in real time. Swap leader every 30 seconds. Encourages focus and gets a full-body warmup.",dur:"2 min",minDur:2,maxDur:2,rating:3},
+  {id:"w10",name:"Reaction Sprints",desc:"Everyone starts in press up position (or squat hold). Stand at the front with your back turned. Clap your hands (or blow whistle) — everyone sprints to a cone 10m away and back to starting position. Vary the timing between claps to keep them guessing.",dur:"1-2 min",minDur:1,maxDur:2,rating:3},
+  {id:"w11",name:"Animal Walks",desc:"No equipment. Line everyone up at one end. Bear crawl to the other end. Crab walk back. Frog jump across. Inchworm back. Keep the pace steady — it's a warmup not a race. Gets shoulders, hips, and core firing. Usually gets a few laughs too.",dur:"1-2 min",minDur:1,maxDur:2,rating:3},
+  {id:"w12",name:"Shuttle Showdown",desc:"Set two cones 10m apart. Pair up. Both sprint cone to cone. Whoever gets back last has to do a penalty exercise (3 squats) before the next sprint. Add a new penalty each round — squats, then lunges, then press ups. 4-5 rounds total.",dur:"2-3 min",minDur:2,maxDur:3,rating:4},
+];
+const INIT_FI = [
+  {id:"f1",name:"Core Blitz",desc:"No equipment needed, just mats. 30s plank, straight into 30s crunches, straight into 30s leg raises, straight into 30s mountain climbers. No rest between exercises. Rest 15s then repeat for round 2. Call out transitions clearly.",dur:"5 min",minDur:5,maxDur:5,rating:4},
+  {id:"f2",name:"Team Rower Relay",desc:"Split into teams of 3-4. One rower per team. First person rows 100m then jumps off — next person jumps on immediately. Keep going until the team hits 500m total. Everyone else holds a wall sit while waiting. Fastest team wins.",dur:"5-7 min",minDur:5,maxDur:7,rating:5},
+  {id:"f3",name:"100 Rep Challenge",desc:"Pick one exercise (KB swings, burpees, or slams work best). The whole class works together to complete 100 reps total. Everyone counts out loud. Pace themselves — it's a team effort. Write the running count on a whiteboard if you have one.",dur:"5-8 min",minDur:5,maxDur:8,rating:5},
+  {id:"f4",name:"Sled Push Relay",desc:"Two teams, one sled each (or take turns). Push the sled down the gym and back — tag the next person. 3 pushes per person. Teammates do squats or hold plank while waiting. Fastest team through all members wins.",dur:"5-7 min",minDur:5,maxDur:7,rating:5},
+  {id:"f5",name:"Plank Hold Challenge",desc:"Everyone gets in plank position. Last person holding wins. If you drop, you're out — go to the side and do 10 squats then cheer everyone else on. Call out the time every 30s. Winner gets bragging rights or picks next week's warmup game.",dur:"5 min",minDur:5,maxDur:5,rating:4},
+  {id:"f6",name:"Descending Ladder",desc:"Pick 2 exercises (e.g. burpees and KB swings). Start at 10 reps of each. Then 9 of each. Then 8... all the way down to 1. Everyone works at their own pace racing to finish. No rest except what you take. Simple to explain, brutal to do.",dur:"8-10 min",minDur:8,maxDur:10,rating:4},
+  {id:"f6b",name:"Ascending Ladder",desc:"Pick 2-3 compound exercises. Start at 2 reps of each. Then 4. Then 6. Keep going up by 2 until time runs out or you hit 20. Everyone works at own pace. First to the top wins. Can also do pyramid — go up to 10 then back down.",dur:"8-10 min",minDur:8,maxDur:10,rating:4},
+  {id:"f7",name:"Death by Burpees",desc:"Start a running clock. Minute 1: do 1 burpee, rest for remainder. Minute 2: 2 burpees. Minute 3: 3 burpees. Keep going until you can't complete the reps within the minute. Last person standing wins. Usually falls apart around minute 8-10.",dur:"5-10 min",minDur:5,maxDur:10,rating:4},
+  {id:"f8",name:"Team Slam Race",desc:"Split into 2-3 teams. One slam ball per team. Teams race to complete 50 total med ball slams. One person slams at a time, everyone else holds a squat or plank. Rotate after every 5 slams. First team to 50 wins. Count loud.",dur:"5 min",minDur:5,maxDur:5,rating:5},
+  {id:"f9",name:"King of the Rower",desc:"Everyone on a rower (or rotate if not enough). Row continuously. Every 60 seconds, check distances — person with the lowest total distance is eliminated. They get off and do burpees on the side. Last person rowing is the king.",dur:"5-8 min",minDur:5,maxDur:8,rating:5},
+  {id:"f10",name:"Tabata Finisher",desc:"Pick 2 simple exercises (e.g. squat jumps and press ups). 20 seconds max effort, 10 seconds rest, alternating between the two exercises. 8 rounds total (4 of each). Use a Tabata timer on your phone. Just 4 minutes of pure intensity.",dur:"5 min",minDur:5,maxDur:5,rating:4},
+  {id:"f11",name:"Wall Sit Endurance",desc:"Everyone against the wall in a wall sit position, thighs parallel. Hold. Every 30 seconds add a challenge: arms overhead, eyes closed, single leg, hold a weight plate. If you stand up you're out — 10 squats penalty then cheer others on.",dur:"5 min",minDur:5,maxDur:5,rating:4},
+  {id:"f12",name:"Tug of War",desc:"Split into two even teams. Use a long rope or TRX strap. Mark a centre line. Best of 3 rounds. Swap a couple of people between teams between rounds to keep it fair. Simple, competitive, everyone loves it. Great energy to end on.",dur:"5 min",minDur:5,maxDur:5,rating:5},
+  {id:"f13",name:"Accumulator",desc:"Pick 5 exercises. Do 5 reps of exercise 1. Then 5 reps of exercise 2, then repeat exercise 1. Then exercise 3, repeat 2, repeat 1. Keep building. By the end you're doing all 5 exercises back to back. No rest. Explain the pattern clearly before starting.",dur:"8-10 min",minDur:8,maxDur:10,rating:4},
+  {id:"f14",name:"SkiErg Sprint Off",desc:"Everyone on a SkiErg (or rotate). 30 second all-out sprint. Record distance. Rest 60s. Go again. Record distance. Compare totals across the class. Put results on a whiteboard. Creates great competition.",dur:"5 min",minDur:5,maxDur:5,rating:4},
+  {id:"f15",name:"Bear Crawl Gauntlet",desc:"Clear a lane the length of the gym. Bear crawl from one end to the other. At the far end, do 10 press ups. Bear crawl back. Repeat for 3 lengths total. Everyone goes at once. It's harder than it sounds — arms will be burning.",dur:"5-7 min",minDur:5,maxDur:7,rating:3},
+];
+
+// Add usedCount/lastUsed to warmups/finishers if missing  
+
+
+// Warmup tags for session-aware selection
+const WU_TAGS={w1:"cardio",w2:"cardio",w3:"cardio",w4:"cardio",w5:"cardio",w6:"cardio",w7:"cardio",w8:"cardio",w9:"full",w10:"explosive",w11:"mobility",w12:"cardio"};
+const WU_SESSION_FIT={lower:["mobility","full","cardio"],upper:["cardio","full","explosive"],full:["cardio","full","explosive"]};
+
+const ensureTracking=(arr)=>arr.map(x=>({usedCount:0,lastUsed:null,...x}));
+
+function estTime(f,p){
+  const wt=p.mode==="reps"?(p.reps||10)*3:(p.workTime||30);const rt=p.restTime||10;
+  switch(f.id){
+    case"circuit":return Math.round((p.rounds*(p.exercises*(wt+rt)+(p.roundRest||60)))/60);
+    case"stations":return Math.round((p.stations*((p.laps||2)*p.exPerStn*(wt+rt)+(p.stnRest||45)))/60);
+    case"tabata":return Math.round(((p.tabSets||1)*(p.exercises*(p.tabRounds||8)*((p.workTime||20)+(p.restTime||10))+(p.setRest||60)))/60);
+    case"amrap":return p.duration;
+    case"supersets":return Math.round((p.pairs*(p.rounds*p.exPerPair*(wt+rt)+(p.pairRest||60)))/60);
+    case"emom":return p.duration;
+    case"buyin":return Math.round(((p.buyIn||20)*3+p.rounds*p.exercises*(wt+rt)+(p.buyOut||20)*3)/60);
+    default:return 20;
+  }
+}
+
+function wPick(a,n){
+  if(a.length<=n)return[...a];
+  const now=Date.now();
+  const scored=a.map(e=>{
+    let rec=0;
+    if(e.lastUsed){const days=(now-new Date(e.lastUsed).getTime())/86400000;rec=Math.min(2,days/14);}
+    else rec=1.5;
+    return{...e,_s:(e.rating||3)*0.8+rec*0.2+Math.random()*0.5};
+  }).sort((a,b)=>b._s-a._s);
+  const pool=scored.slice(0,Math.min(n*3,scored.length));
+  const s=[],u=new Set();let i=0;
+  while(s.length<n&&i<2000){const p=pool[Math.floor(Math.random()*pool.length)];if(!u.has(p.id)){s.push(p);u.add(p.id);}i++;}
+  return s;
+}
+
+function smartSel(ex,sess,tot,hist=[]){
+  const recentIds=new Set();hist.slice(0,3).forEach(h=>(h.exercises||[]).forEach(e=>recentIds.add(e.id)));
+  const prefer=ex.map(e=>recentIds.has(e.id)?{...e,rating:Math.max(1,e.rating-1)}:e);
+  const pk=(c,s,n)=>wPick(prefer.filter(e=>e.category===c&&e.subcategory===s),n);
+  let s=[];
+  if(sess==="lower"){
+    const a=Math.ceil(tot*.28),b=Math.ceil(tot*.28),c=Math.max(1,Math.floor(tot*.08)),d=Math.max(1,Math.floor(tot*.22));
+    const lBase=[...pk("Lower Body","Push (Squats/Lunges)",a),...pk("Lower Body","Pull (Hinge/Deadlift)",b),...pk("Lower Body","Calves",c),...pk("Lower Body","Cardio/Plyometric",d),...wPick(prefer.filter(e=>e.category==="Core"),Math.max(1,tot-a-b-c-d))];
+    const lC=lBase.filter(e=>e.type==="cardio").length;const lTarget=Math.ceil(tot/2);
+    if(lC<lTarget){const lIds=new Set(lBase.map(e=>e.id));const lPool=prefer.filter(e=>e.type==="cardio"&&!lIds.has(e.id)&&(e.category==="Lower Body"||e.category==="Core"));const lAdd=wPick(lPool,Math.min(lTarget-lC,2));lBase.splice(lBase.length-lAdd.length,lAdd.length,...lAdd);}
+    s=lBase;
+  } else if(sess==="upper"){
+    const ch=Math.max(1,Math.ceil(tot*.18)),bk=Math.max(1,Math.ceil(tot*.18)),sh=Math.max(1,Math.ceil(tot*.14)),bi=Math.max(1,Math.floor(tot*.1)),tr=Math.max(1,Math.floor(tot*.1)),cd=Math.max(1,Math.floor(tot*.15));
+    s=[...pk("Upper Body","Chest",ch),...pk("Upper Body","Back",bk),...pk("Upper Body","Shoulders",sh),...pk("Upper Body","Biceps",bi),...pk("Upper Body","Triceps",tr),...pk("Upper Body","Cardio/Compound",cd),...wPick(prefer.filter(e=>e.category==="Core"),Math.max(1,tot-ch-bk-sh-bi-tr-cd))];
+  } else {
+    const half=Math.floor(tot/2);
+    const base=[...pk("Lower Body","Push (Squats/Lunges)",1),...pk("Lower Body","Pull (Hinge/Deadlift)",1),...pk("Lower Body","Cardio/Plyometric",1),...wPick(prefer.filter(e=>["Chest","Shoulders","Triceps"].includes(e.subcategory)&&e.type==="resistance"),1),...wPick(prefer.filter(e=>["Back","Biceps"].includes(e.subcategory)&&e.type==="resistance"),1),...pk("Upper Body","Cardio/Compound",1),...wPick(prefer.filter(e=>e.category==="Core"),Math.max(1,Math.floor(tot*0.12)))];
+    const baseIds=new Set(base.map(e=>e.id));const remaining=tot-base.length;
+    if(remaining>0){
+      let cc=base.filter(e=>e.type==="cardio").length;const needC=Math.max(0,half-cc);
+      const usedEq=new Set(base.flatMap(e=>e.equipment));
+      const avC=prefer.filter(e=>e.type==="cardio"&&!baseIds.has(e.id)).sort((a,b)=>b.equipment.filter(eq=>usedEq.has(eq)).length-a.equipment.filter(eq=>usedEq.has(eq)).length);
+      const avR=prefer.filter(e=>e.type==="resistance"&&!baseIds.has(e.id)).sort((a,b)=>b.equipment.filter(eq=>usedEq.has(eq)).length-a.equipment.filter(eq=>usedEq.has(eq)).length);
+      const curC=base.filter(e=>e.type==="cardio").length;const target=Math.ceil(tot/2);
+      const needMore=Math.max(0,target-curC);
+      base.push(...wPick(avC,Math.min(needMore,remaining)),...wPick(avR,Math.max(0,remaining-Math.min(needMore,remaining))));
+    }
+    s=base;
+  }
+  const uniq=[],ids=new Set();for(const e of s)if(!ids.has(e.id)){uniq.push(e);ids.add(e.id);}
+  const ord=[],rem=[...uniq],rec=[];
+  while(rem.length){
+    let best=rem.find(e=>!rec.slice(-2).includes(e.subcategory)&&(ord.length===0||ord[ord.length-1].type!==e.type));
+    if(!best)best=rem.find(e=>!rec.slice(-2).includes(e.subcategory));
+    if(!best)best=rem[0];
+    rem.splice(rem.indexOf(best),1);ord.push(best);rec.push(best.subcategory);
+  }
+  return ord.slice(0,tot);
+}
+
+const gymSort=(exs,zones)=>{
+  const zm={};zones.forEach(z=>zm[z.id]=z.order);
+  return[...exs].sort((a,b)=>(zm[a.zone]||99)-(zm[b.zone]||99)||(a.zoneOrder||0)-(b.zoneOrder||0));
+};
+
+// Equipment clash detection
+const detectClashes=(exs)=>{
+  const single=new Set(["Rower","SkiErg","Sled","Log"]);
+  const used={};const clashes=[];
+  exs.forEach(e=>e.equipment.forEach(eq=>{if(single.has(eq)){if(used[eq])clashes.push({eq,ex1:used[eq],ex2:e.name});else used[eq]=e.name;}}));
+  return clashes;
+};
+
+// Format avoidance from recent history
+const pickFormat=(formats,hist)=>{
+  const recentFmts=new Set(hist.slice(0,2).map(h=>h.fmt?.id).filter(Boolean));
+  const wf=formats.flatMap(f=>{const w=f.rating||3;const penalty=recentFmts.has(f.id)?1:w;return Array(Math.max(1,penalty)).fill(f);});
+  return wf[Math.floor(Math.random()*wf.length)];
+};
+
+const today=()=>new Date().toISOString().split("T")[0];
+const fmtDate=(d)=>{if(!d)return"never";const diff=Math.floor((Date.now()-new Date(d).getTime())/86400000);if(diff===0)return"today";if(diff===1)return"yesterday";if(diff<7)return diff+"d ago";return d;};
+
+// ─── COMPONENTS ───
+function Stars({v,onChange,sz=14}){return <div onClick={e=>e.stopPropagation()} style={{display:"flex",gap:1,cursor:onChange?"pointer":"default"}}>{[1,2,3,4,5].map(n=><span key={n} onClick={()=>onChange?.(n)} style={{color:n<=v?T.yellow:T.textDim,fontSize:sz,lineHeight:1}}>★</span>)}</div>;}
+
+function NI({value:val,onChange:oc,min=0,max=999,step=1,label:lb}){
+  return <div style={{display:"flex",flexDirection:"column",gap:4}}>
+    {lb&&<span style={{fontSize:10,color:T.textMuted,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>{lb}</span>}
+    <div style={{display:"flex",alignItems:"center",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,overflow:"hidden",minHeight:40}}>
+      <button onClick={()=>oc(Math.max(min,val-step))} style={{background:"none",border:"none",color:T.textMuted,cursor:"pointer",padding:"8px 12px",fontSize:16,fontFamily:font,minWidth:40,minHeight:40}}>−</button>
+      <span style={{padding:"6px 4px",fontSize:14,fontWeight:700,color:T.white,fontFamily:mono,minWidth:28,textAlign:"center"}}>{val}</span>
+      <button onClick={()=>oc(Math.min(max,val+step))} style={{background:"none",border:"none",color:T.textMuted,cursor:"pointer",padding:"8px 12px",fontSize:16,fontFamily:font,minWidth:40,minHeight:40}}>+</button>
+    </div>
+  </div>;
+}
+
+const SwapBtn=({onClick})=><button className="th-btn th-swap" onClick={e=>{e.stopPropagation();onClick();}} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:8,cursor:"pointer",color:T.text,padding:"8px 12px",fontSize:12,fontWeight:600,fontFamily:font,display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap",minHeight:36,transition:"all .15s"}}>↻ Swap</button>;
+
+const Chev=({open,sz=28})=><span style={{width:sz,height:sz,borderRadius:"50%",background:open?T.blueGlow:T.surface,border:`1px solid ${open?T.blue+"66":T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s",fontSize:sz>24?12:10,color:open?T.blue:T.textMuted}}>{open?"▼":"▲"}</span>;
+
+const BalanceBar=({exercises})=>{const c=exercises.filter(e=>e.type==="cardio").length;const r=exercises.length-c;const pct=exercises.length?Math.round(c/exercises.length*100):50;return <div style={{display:"flex",alignItems:"center",gap:6,fontSize:9}}><span style={{color:T.orange}}>{pct}% cardio</span><div style={{flex:1,height:4,borderRadius:2,background:T.border,overflow:"hidden"}}><div style={{width:pct+"%",height:"100%",background:`linear-gradient(90deg,${T.orange},${T.blue})`,borderRadius:2,transition:"width .3s"}}/></div><span style={{color:T.blue}}>{100-pct}% resistance</span></div>;};
+
+// ─── APP ───
+function App(){
+  const[tab,setTab]=useState(()=>LS.get("tab","generate"));
+  const[exercises,setExercises]=useState(()=>LS.get("exercises",INIT_EX));
+  const[formats,setFormats]=useState(()=>LS.get("formats",INIT_FMT));
+  const[warmups,setWarmups]=useState(()=>ensureTracking(LS.get("warmups",INIT_WU)));
+  const[finishers,setFinishers]=useState(()=>ensureTracking(LS.get("finishers",INIT_FI)));
+  const[history,setHistory]=useState(()=>LS.get("history",[]));
+  const[fmtParams,setFmtParams]=useState(()=>LS.get("fmtParams",{}));
+  const[zones,setZones]=useState(()=>LS.get("zones",DEFAULT_ZONES));
+  const[schedule,setSchedule]=useState(()=>LS.get("schedule",[{day:"Monday",sess:"upper",emoji:"💪"},{day:"Wednesday",sess:"full",emoji:"🏋️"},{day:"Friday",sess:"lower",emoji:"🦵"},{day:"Saturday",sess:"full",emoji:"🏋️"}]));
+  const[workout,setWorkout]=useState(()=>LS.get("workout",null));
+  const[genMode,setGenMode]=useState(()=>LS.get("genMode","single"));
+  const[gFmt,setGFmt]=useState(()=>LS.get("gFmt","circuit"));
+  const[gSess,setGSess]=useState(()=>LS.get("gSess","full"));
+  const[genParams,setGenParams]=useState({});
+  const[exFilt,setExFilt]=useState({cat:"all",type:"all",sub:"all",q:"",sort:"name"});
+  const[wfSearch,setWfSearch]=useState("");
+  const[wfSort,setWfSort]=useState("name");
+  const[showAddEx,setShowAddEx]=useState(false);
+  const[showAddFmt,setShowAddFmt]=useState(false);
+  const[editFmt,setEditFmt]=useState(null);
+  const[showAddWu,setShowAddWu]=useState(false);
+  const[wfActive,setWfActive]=useState(()=>LS.get("wfActive","warmup"));
+  const[showAddFi,setShowAddFi]=useState(false);
+  const[copied,setCopied]=useState(false);
+  const[dragI,setDragI]=useState(null);
+  const[confirmDel,setConfirmDel]=useState(null);
+  const[expandedId,setExpandedId]=useState(null);
+  const[undoEx,setUndoEx]=useState(null);
+  const[toast,setToast]=useState(null);
+  const[weekPlan,setWeekPlan]=useState(()=>LS.get("weekPlan",null));
+  const[weekExp,setWeekExp]=useState(null);
+  
+  const[woNotes,setWoNotes]=useState(()=>LS.get("woNotes",""));
+  const[boardMode,setBoardMode]=useState(false);
+  const[controlsOpen,setControlsOpen]=useState(true);
+  const[showGenSettings,setShowGenSettings]=useState(false);
+  const[generating,setGenerating]=useState(false);
+  const[collapsedCats,setCollapsedCats]=useState(()=>LS.get("collapsedCats",{}));
+  const[nEx,setNEx]=useState({name:"",category:"Lower Body",subcategory:"Push (Squats/Lunges)",equipment:[],type:"resistance",rating:3});
+  const[nFmt,setNFmt]=useState({name:"",desc:"",icon:"🔥",mode:"timed",how:"",exercises:8,rounds:3,stations:0,exPerStn:4,workTime:35,restTime:10,reps:10,duration:20,roundRest:60,stnRest:45});
+  const[nItem,setNItem]=useState({name:"",desc:"",dur:""});
+  const[keepAddOpen,setKeepAddOpen]=useState(false);
+  const[settingsOpen,setSettingsOpen]=useState(()=>LS.get("settingsOpen",{schedule:false,zones:false,bulk:false,data:false}));
+
+  const showToast=(msg,dur=2500)=>{setToast(msg);setTimeout(()=>setToast(null),dur);};
+
+  useEffect(()=>{const v=LS.get("dataVersion",0);if(v<2){setFormats(INIT_FMT);setFmtParams({});LS.set("dataVersion",2);}},[]);
+  useEffect(()=>LS.set("exercises",exercises),[exercises]);
+  useEffect(()=>LS.set("formats",formats),[formats]);
+  useEffect(()=>LS.set("warmups",warmups),[warmups]);
+  useEffect(()=>LS.set("finishers",finishers),[finishers]);
+  useEffect(()=>LS.set("history",history),[history]);
+  useEffect(()=>LS.set("fmtParams",fmtParams),[fmtParams]);
+  useEffect(()=>LS.set("zones",zones),[zones]);
+  useEffect(()=>LS.set("schedule",schedule),[schedule]);
+  useEffect(()=>{if(weekPlan)LS.set("weekPlan",weekPlan);},[weekPlan]);
+  useEffect(()=>LS.set("tab",tab),[tab]);
+  useEffect(()=>LS.set("genMode",genMode),[genMode]);
+  useEffect(()=>LS.set("gFmt",gFmt),[gFmt]);
+  useEffect(()=>LS.set("gSess",gSess),[gSess]);
+  useEffect(()=>LS.set("wfActive",wfActive),[wfActive]);
+  useEffect(()=>{if(workout)LS.set("workout",workout);},[workout]);
+  useEffect(()=>LS.set("woNotes",woNotes),[woNotes]);
+  useEffect(()=>LS.set("settingsOpen",settingsOpen),[settingsOpen]);
+  useEffect(()=>LS.set("collapsedCats",collapsedCats),[collapsedCats]);
+
+  useEffect(()=>{
+    const s=document.createElement("style");
+    s.textContent=`
+      .th-btn{transition:all .15s !important}.th-btn:hover{filter:brightness(1.2);transform:translateY(-1px)}.th-btn:active{filter:brightness(0.95);transform:translateY(0)}
+      .th-swap:hover{background:${T.blueGlow} !important;color:${T.blue} !important;border-color:${T.blue}44 !important}
+      .th-input:focus{border-color:${T.blue} !important;box-shadow:0 0 0 2px ${T.blueGlow}}
+      select:hover{border-color:${T.blue}66 !important}
+      .th-toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:${T.card};border:1px solid ${T.border};color:${T.white};padding:12px 24px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;box-shadow:0 8px 32px rgba(0,0,0,0.4);animation:toast-in .3s ease}
+      @keyframes toast-in{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+      
+      @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+      .th-week-card{transition:all .2s}.th-week-card:hover{border-color:${T.blue}44 !important}
+      .th-ex-row:hover{background:${T.surface} !important}
+      ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${T.surface}}::-webkit-scrollbar-thumb{background:${T.border};border-radius:3px}
+      .th-bottom-nav{display:none}
+      @media(max-width:640px){
+        .th-toast{bottom:80px;font-size:12px;padding:10px 16px;max-width:90vw}
+        .th-toolbar{flex-direction:column !important;align-items:stretch !important}
+        .th-toolbar>*{width:100% !important;max-width:100% !important;flex:1 !important}
+        .th-filters{display:grid !important;grid-template-columns:1fr 1fr !important;gap:6px !important}
+        .th-week-grid{grid-template-columns:1fr !important}
+        .th-hist-panel{width:100% !important;max-width:100% !important}
+        .th-bottom-nav{display:flex !important;position:fixed;bottom:0;left:0;right:0}
+        .th-top-tabs{display:none !important}
+        
+        .th-ex-row{padding:10px 12px !important}
+        .th-ex-row span,.th-ex-row div{font-size:inherit}
+        select,input[type=text],input[placeholder]{font-size:16px !important;min-height:40px}
+        button{min-height:40px}
+        .th-compact-stats{display:none !important}
+      }
+      @media(min-width:641px){
+        .th-bottom-nav{display:none !important}
+      }
+    `;document.head.appendChild(s);return()=>s.remove();
+  },[]);
+
+
+  const gp=(fid)=>{const f=formats.find(x=>x.id===fid);return f?{...f.params,...genParams}:{};};
+  const sgp=(k,v)=>setGenParams(p=>({...p,[k]:v}));
+  const selectFmt=(fid)=>{setGFmt(fid);setGenParams({});};
+  const fp=(fid)=>{const f=formats.find(x=>x.id===fid);return f?{...f.params,...(fmtParams[fid]||{})}:{};};
+  const sfp=(fid,k,v)=>setFmtParams(p=>({...p,[fid]:{...(p[fid]||{}),[k]:v}}));
+  const updEx=(id,ch)=>setExercises(exercises.map(e=>e.id===id?{...e,...ch}:e));
+
+  const generate=(overSess,overFmt)=>{
+    const sess=overSess||gSess;let fid=overFmt||gFmt;
+    if(fid==="random"){const f=pickFormat(formats,history);fid=f.id;}
+    const f=formats.find(x=>x.id===fid);if(!f)return null;
+    const p={...f.params,...(overFmt?{}:genParams)};
+    const tot=p.exercises||((p.stations||0)*(p.exPerStn||0))||((p.pairs||0)*(p.exPerPair||0))||8;
+    const rawExs=smartSel(exercises,sess,tot,history);
+    const exs=gymSort(rawExs,zones);
+    const workoutTime=estTime(f,p);
+    const remaining=37-workoutTime;const fiBudget=Math.max(5,Math.min(10,remaining-2));
+    // Session-aware warmup selection
+    const fitTags=WU_SESSION_FIT[sess]||["cardio"];
+    const scoredFi=finishers.map(fi=>{const mid=((fi.minDur||5)+(fi.maxDur||5))/2;return{...fi,_s:(1/(1+Math.abs(mid-fiBudget)))*fi.rating};}).sort((a,b)=>b._s-a._s);
+    const fi=wPick(scoredFi.slice(0,5),1)[0]||scoredFi[0];
+    const wuBudget=Math.max(1,remaining-(fi?.minDur||5));
+    const scoredWu=warmups.map(wu=>{const mid=((wu.minDur||1)+(wu.maxDur||2))/2;const tagBonus=fitTags.includes(WU_TAGS[wu.id]||"cardio")?1.5:0;return{...wu,_s:(1/(1+Math.abs(mid-wuBudget)))*(wu.rating||3)+tagBonus};}).sort((a,b)=>b._s-a._s);
+    const wu=wPick(scoredWu.slice(0,5),1)[0]||scoredWu[0];
+    const totalEst=Math.round(workoutTime+(wu?.maxDur||2)+((fi?.minDur||5)+(fi?.maxDur||5))/2+8);
+    const clashes=detectClashes(exs);
+    const wo={fmt:f,params:p,exercises:exs,warmup:wu,finisher:fi,time:workoutTime,totalEst,session:sess,date:new Date().toLocaleString(),dateKey:today(),checked:{},notes:"",clashes};
+    if(!overSess&&!overFmt){setWorkout(wo);setUndoEx(null);setWoNotes("");}
+    return wo;
+  };
+
+  const genWithAnim=(os,of)=>{setGenerating(true);setTimeout(()=>{generate(os,of);setGenerating(false);setControlsOpen(false);},400);};
+  const genWeek=()=>{setGenerating(true);setTimeout(()=>{const plan=schedule.map(d=>{const f=pickFormat(formats,history);return{...d,workout:generate(d.sess,f.id)};});setWeekPlan(plan);setWeekExp(null);setGenerating(false);showToast("📅 Week plan generated");},500);};
+
+  const swapEx=(i)=>{if(!workout)return;const cur=workout.exercises[i];setUndoEx({index:i,exercise:cur});const pool=exercises.filter(e=>e.id!==cur.id&&!workout.exercises.some(x=>x.id===e.id)&&(e.subcategory===cur.subcategory||(e.type===cur.type&&e.category===cur.category)));if(!pool.length)return;const r=wPick(pool,1)[0];const n=[...workout.exercises];n[i]=r;setWorkout({...workout,exercises:n});};
+  const undoSwap=()=>{if(!undoEx||!workout)return;const n=[...workout.exercises];n[undoEx.index]=undoEx.exercise;setWorkout({...workout,exercises:n});setUndoEx(null);};
+  const markUsed=()=>{if(!workout)return;const ids=workout.exercises.map(e=>e.id);setExercises(exercises.map(e=>ids.includes(e.id)?{...e,usedCount:e.usedCount+1,lastUsed:today()}:e));setWarmups(warmups.map(w=>w.id===workout.warmup?.id?{...w,usedCount:(w.usedCount||0)+1,lastUsed:today()}:w));setFinishers(finishers.map(f=>f.id===workout.finisher?.id?{...f,usedCount:(f.usedCount||0)+1,lastUsed:today()}:f));const wo={...workout,notes:woNotes,savedAt:new Date().toISOString()};setHistory(prev=>[wo,...prev].slice(0,50));showToast("✓ Workout logged");};
+  const toggleChk=(i)=>{if(!workout)return;setWorkout({...workout,checked:{...workout.checked,[i]:!workout.checked[i]}});};
+  const onDS=(i)=>setDragI(i);const onDO=(e)=>e.preventDefault();
+  const onDr=(i)=>{if(dragI===null||!workout)return;const n=[...workout.exercises];const[m]=n.splice(dragI,1);n.splice(i,0,m);setWorkout({...workout,exercises:n});setDragI(null);};
+
+  const buildCopyText=(wo)=>{if(!wo)return"";
+    const sess=wo.session==="lower"?"Lower Body":wo.session==="upper"?"Upper Body":"Full Body";
+    let t=`TRANSFORMHUB\n${sess} — ${wo.fmt?.name||"?"}\n~${wo.time}m workout | ~${wo.totalEst||45}m class | ${wo.date}\n\n`;
+    t+=`WARMUP: ${wo.warmup?.name||"?"} (${wo.warmup?.dur||"?"})\n\n`;
+    t+=`WORKOUT: ${wo.fmt?.name||"?"}\n`;
+    if(wo.fmt?.how){const short=wo.fmt.how.split(".").slice(0,2).join(".")+".";t+=`${short}\n\n`;}
+    if(wo.fmt?.id==="stations"){const ps=wo.params.exPerStn||4;for(let si=0;si<(wo.params.stations||3);si++){t+=`Station ${si+1}\n`;wo.exercises.slice(si*ps,(si+1)*ps).forEach((e,i)=>t+=`  ${i+1}. ${e.name}\n`);t+=`\n`;}}
+    else if(wo.fmt?.id==="supersets"){const pp=wo.params.exPerPair||2;for(let pi=0;pi<(wo.params.pairs||4);pi++){t+=`Superset ${pi+1}\n`;wo.exercises.slice(pi*pp,(pi+1)*pp).forEach((e,i)=>t+=`  ${String.fromCharCode(65+i)}. ${e.name}\n`);t+=`\n`;}}
+    else wo.exercises.forEach((e,i)=>t+=`${i+1}. ${e.name}\n`);
+    const pp=[];
+    if(wo.params.mode==="reps"&&wo.params.reps)pp.push(`${wo.params.reps} reps`);
+    if(wo.params.mode==="timed"&&wo.params.workTime)pp.push(`${wo.params.workTime}s on / ${wo.params.restTime}s off`);
+    if(wo.params.rounds)pp.push(`${wo.params.rounds} rounds`);
+    if(wo.params.laps)pp.push(`${wo.params.laps} laps`);
+    if(wo.params.duration)pp.push(`${wo.params.duration} min`);
+    if(pp.length)t+=`\n${pp.join(" | ")}\n`;
+    t+=`\nFINISHER: ${wo.finisher?.name||"?"} (${wo.finisher?.dur||"?"})`;
+    if(wo.notes)t+=`\n\nNotes: ${wo.notes}`;
+    return t;
+  };
+  const copyWo=()=>{const t=buildCopyText(workout);if(!t)return;copyToClip(t).then(()=>{setCopied(true);showToast("📋 Copied to clipboard");setTimeout(()=>setCopied(false),2000);});};
+    const shareWo=()=>{if(!workout)return;try{const d={s:workout.session,f:workout.fmt.id,e:workout.exercises.map(e=>e.name),w:workout.warmup.name,fi:workout.finisher.name};copyToClip(window.location.href.split("#")[0]+"#s="+btoa(JSON.stringify(d))).then(()=>{showToast("🔗 Share link copied");});}catch{}};
+
+  const filtEx=useMemo(()=>{let l=exercises.filter(e=>{if(exFilt.cat!=="all"&&e.category!==exFilt.cat)return false;if(exFilt.type!=="all"&&e.type!==exFilt.type)return false;if(exFilt.q&&!e.name.toLowerCase().includes(exFilt.q.toLowerCase()))return false;if(exFilt.sub&&exFilt.sub!=="all"&&e.subcategory!==exFilt.sub)return false;return true;});const s=exFilt.sort;if(s==="name")l.sort((a,b)=>a.name.localeCompare(b.name));else if(s==="rating")l.sort((a,b)=>b.rating-a.rating);else if(s==="used")l.sort((a,b)=>b.usedCount-a.usedCount);else if(s==="recent")l.sort((a,b)=>(b.lastUsed||"").localeCompare(a.lastUsed||""));else if(s==="category")l.sort((a,b)=>`${a.category}${a.subcategory}`.localeCompare(`${b.category}${b.subcategory}`));return l;},[exercises,exFilt]);
+
+  // Sort/filter warmups and finishers
+  const sortWF=(items)=>{let f=items.filter(it=>!wfSearch||it.name.toLowerCase().includes(wfSearch.toLowerCase())||it.desc.toLowerCase().includes(wfSearch.toLowerCase()));if(wfSort==="name")f.sort((a,b)=>a.name.localeCompare(b.name));else if(wfSort==="rating")f.sort((a,b)=>(b.rating||3)-(a.rating||3));else if(wfSort==="used")f.sort((a,b)=>(b.usedCount||0)-(a.usedCount||0));else if(wfSort==="recent")f.sort((a,b)=>(b.lastUsed||"").localeCompare(a.lastUsed||""));else if(wfSort==="duration")f.sort((a,b)=>(a.minDur||5)-(b.minDur||5));return f;};
+
+  const S={btn:(v="primary")=>({padding:"10px 16px",borderRadius:8,border:"none",fontSize:13,fontWeight:600,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:6,transition:"all .15s",fontFamily:font,letterSpacing:".02em",minHeight:40,...(v==="primary"?{background:T.blue,color:"#fff"}:v==="danger"?{background:T.redGlow,color:T.red,border:`1px solid ${T.red}33`}:{background:T.surface,color:T.text,border:`1px solid ${T.border}`})}),inp:{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.white,fontSize:14,fontFamily:font,outline:"none",width:"100%",boxSizing:"border-box",minHeight:40},sel:{padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.white,fontSize:14,fontFamily:font,outline:"none",cursor:"pointer",minHeight:40},card:{background:T.card,borderRadius:10,padding:14,marginBottom:10,border:`1px solid ${T.border}`},tag:(a=false)=>({padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:a?T.blueGlow:T.surface,color:a?T.blue:T.textMuted,border:`1px solid ${a?T.blue+"44":"transparent"}`,display:"inline-block",marginRight:3,marginBottom:3,minHeight:28}),badge:(c=T.blue)=>({padding:"3px 8px",borderRadius:10,fontSize:10,fontWeight:700,background:c+"18",color:c,letterSpacing:".04em"}),toolbar:{background:T.card,borderRadius:10,padding:"10px 14px",marginBottom:10,border:`1px solid ${T.border}`,display:"flex",flexWrap:"wrap",alignItems:"center",gap:8},pill:{cursor:"pointer",fontSize:12,color:T.textDim,padding:"8px 14px",background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,whiteSpace:"nowrap",minHeight:40,display:"inline-flex",alignItems:"center",gap:4}};
+
+  const renderExRow=(ex,i)=>(<div key={ex.id+i} className="th-ex-row" draggable onDragStart={()=>onDS(i)} onDragOver={onDO} onDrop={()=>onDr(i)} onTouchStart={()=>onDS(i)} onTouchEnd={()=>{if(dragI!==null&&dragI!==i)onDr(i);}} style={{display:"flex",alignItems:"center",padding:"10px 12px",gap:8,borderBottom:`1px solid ${T.border}22`,cursor:"grab",background:dragI===i?T.blueGlow:"transparent",borderRadius:dragI===i?6:0,opacity:workout?.checked[i]?0.45:1,transition:"all .15s"}}><input type="checkbox" checked={!!workout?.checked[i]} onChange={()=>toggleChk(i)} style={{accentColor:T.blue,cursor:"pointer",flexShrink:0}}/><span style={{width:24,height:24,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,color:T.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,fontFamily:mono,flexShrink:0}}>{i+1}</span><div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.white,fontSize:13,textDecoration:workout?.checked[i]?"line-through":"none"}}>{ex.name}</div><div style={{fontSize:11,color:T.textDim}}>{ex.equipment.join(" · ")}</div></div><span style={{...S.badge(ex.type==="cardio"?T.orange:T.blue),fontSize:8}}>{ex.type==="cardio"?"CARDIO":"RESISTANCE"}</span><SwapBtn onClick={()=>swapEx(i)}/><span style={{color:T.textDim,fontSize:10,cursor:"grab",userSelect:"none"}}>⋮⋮</span></div>);
+
+  // ── GENERATE TAB ──
+  const genTab=()=>{const fmt=formats.find(f=>f.id===gFmt);const p=fmt?gp(gFmt):{};const tm=fmt?estTime(fmt,p):0;
+    return <div>
+      <div style={{display:"flex",gap:0,marginBottom:12,background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+        <button className="th-btn" onClick={()=>setGenMode("single")} style={{flex:1,padding:"12px",fontSize:13,fontWeight:700,fontFamily:font,cursor:"pointer",border:"none",background:genMode==="single"?T.blue:"transparent",color:genMode==="single"?"#fff":T.textMuted,transition:"all .15s"}}>⚡ Single Session</button>
+        <button className="th-btn" onClick={()=>setGenMode("week")} style={{flex:1,padding:"12px",fontSize:13,fontWeight:700,fontFamily:font,cursor:"pointer",border:"none",borderLeft:`1px solid ${T.border}`,background:genMode==="week"?T.blue:"transparent",color:genMode==="week"?"#fff":T.textMuted,transition:"all .15s"}}>📅 Week Plan</button>
+      </div>
+
+      {generating&&<div style={{textAlign:"center",padding:30}}><div style={{fontSize:24,animation:"spin 1s linear infinite",display:"inline-block"}}>⚡</div><div style={{fontSize:12,color:T.textMuted,marginTop:8}}>Generating...</div></div>}
+
+      {!generating&&genMode==="week"&&<div style={{...S.card,border:`1px solid ${T.blue}33`}}>
+        <div style={{fontSize:10,color:T.textMuted,marginBottom:14,lineHeight:1.4}}>Generate sessions for the week based on your schedule. Avoids repeating recent formats. Edit schedule in ⚙️ Settings.</div>
+        <button className="th-btn" onClick={genWeek} style={{...S.btn("primary"),width:"100%",justifyContent:"center",padding:"13px",fontSize:14,borderRadius:8,marginBottom:14}}>⚡ Generate Full Week</button>
+        {weekPlan&&<div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+            {weekPlan.map((d,i)=>d.workout&&<div key={i}>
+              <div className="th-week-card" style={{background:weekExp===i?T.blueGlow:T.surface,borderRadius:8,padding:12,border:`1px solid ${weekExp===i?T.blue:T.border}`,cursor:"pointer",transition:"all .15s"}} onClick={()=>setWeekExp(weekExp===i?null:i)}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:22}}>{d.emoji}</span>
+                  <div style={{flex:1}}><div style={{fontSize:12,fontWeight:800,color:T.white}}>{d.day}</div><div style={{fontSize:9,color:T.textMuted}}>{d.workout.fmt.icon} {d.workout.fmt.name} · ~{d.workout.time}m</div></div>
+                  <Chev open={weekExp===i}/>
+                </div>
+                {weekExp!==i&&<div style={{marginTop:6}}><BalanceBar exercises={d.workout.exercises}/></div>}
+              </div>
+              {weekExp===i&&(()=>{const wo=d.workout;return <div style={{...S.card,border:`1px solid ${T.blue}33`,marginTop:4}}>
+                <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6,marginBottom:10}}>
+                  <div><div style={{fontSize:13,fontWeight:800,color:T.white}}>{d.emoji} {wo.session.charAt(0).toUpperCase()+wo.session.slice(1)} Body — {wo.fmt.name}</div><div style={{fontSize:10,color:T.textMuted,fontFamily:mono}}>~{wo.time}m · ~{wo.totalEst}m class</div></div>
+                  <div style={{display:"flex",gap:5}}><button className="th-btn" onClick={e=>{e.stopPropagation();const nw=generate(d.sess,pickFormat(formats,history).id);if(nw){const np=[...weekPlan];np[i]={...d,workout:nw};setWeekPlan(np);showToast(d.day+" refreshed");}}} style={S.btn("ghost")}>↻ Refresh</button><button className="th-btn" onClick={()=>{copyToClip(buildCopyText(wo)).then(()=>showToast(d.day+" copied"));}} style={S.btn("ghost")}>📋 Copy</button></div>
+                </div>
+                <BalanceBar exercises={wo.exercises}/>
+                <div style={{background:T.greenGlow,borderRadius:7,padding:"8px 10px",marginTop:8,marginBottom:8,border:`1px solid ${T.green}33`}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:T.white}}>{wo.warmup?.name} <span style={{fontSize:9,color:T.green,fontWeight:800}}>WARMUP</span> <span style={{fontSize:9,color:T.textDim,fontFamily:mono}}>{wo.warmup?.dur}</span></div></div>
+                  <span onClick={e=>{e.stopPropagation();setExpandedId(expandedId==="wkwu"+i?null:"wkwu"+i);}} style={{cursor:"pointer",...S.pill}}>{expandedId==="wkwu"+i?"Hide ▲":"How to run ▼"}</span><SwapBtn onClick={()=>{const a=wPick(warmups.filter(w=>w.id!==wo.warmup?.id),1)[0];if(a){const np=[...weekPlan];np[i]={...d,workout:{...wo,warmup:a}};setWeekPlan(np);}}}/>
+                </div>
+                {expandedId==="wkwu"+i&&<div style={{fontSize:11,color:T.textMuted,lineHeight:1.5,marginTop:6,paddingTop:6,borderTop:`1px solid ${T.green}22`}}>{wo.warmup?.desc}</div>}
+              </div>
+                <div style={{marginBottom:8}}>{wo.exercises.map((ex,ei)=><div key={ex.id+ei} className="th-ex-row" style={{display:"flex",alignItems:"center",padding:"10px 12px",gap:8,borderBottom:`1px solid ${T.border}22`,fontSize:13}}><span style={{width:24,height:24,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,color:T.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,fontFamily:mono,flexShrink:0}}>{ei+1}</span><div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.white,fontSize:13}}>{ex.name}</div><div style={{fontSize:11,color:T.textDim}}>{ex.equipment.join(" · ")}</div></div><span style={{...S.badge(ex.type==="cardio"?T.orange:T.blue),fontSize:8}}>{ex.type==="cardio"?"CARDIO":"RESISTANCE"}</span><SwapBtn onClick={()=>{const pool=exercises.filter(e=>e.id!==ex.id&&!wo.exercises.some(x=>x.id===e.id)&&(e.subcategory===ex.subcategory||(e.type===ex.type&&e.category===ex.category)));if(!pool.length)return;const r=wPick(pool,1)[0];const ne=[...wo.exercises];ne[ei]=r;const np=[...weekPlan];np[i]={...d,workout:{...wo,exercises:ne}};setWeekPlan(np);}}/></div>)}</div>
+                <div style={{background:T.orangeGlow,borderRadius:7,padding:"8px 10px",border:`1px solid ${T.orange}33`}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:T.white}}>{wo.finisher?.name} <span style={{fontSize:9,color:T.orange,fontWeight:800}}>FINISHER</span> <span style={{fontSize:9,color:T.textDim,fontFamily:mono}}>{wo.finisher?.dur}</span></div></div>
+                  <span onClick={e=>{e.stopPropagation();setExpandedId(expandedId==="wkfi"+i?null:"wkfi"+i);}} style={{cursor:"pointer",...S.pill}}>{expandedId==="wkfi"+i?"Hide ▲":"How to run ▼"}</span><SwapBtn onClick={()=>{const a=wPick(finishers.filter(f=>f.id!==wo.finisher?.id),1)[0];if(a){const np=[...weekPlan];np[i]={...d,workout:{...wo,finisher:a}};setWeekPlan(np);}}}/>
+                </div>
+                {expandedId==="wkfi"+i&&<div style={{fontSize:11,color:T.textMuted,lineHeight:1.5,marginTop:6,paddingTop:6,borderTop:`1px solid ${T.orange}22`}}>{wo.finisher?.desc}</div>}
+              </div>
+              </div>;})()}
+            </div>)}
+          </div>
+          <button className="th-btn" onClick={()=>{const all=weekPlan.filter(d=>d.workout).map(d=>buildCopyText(d.workout)).join("\n\n");copyToClip(all).then(()=>showToast("Full week copied"));}} style={{...S.btn("ghost"),width:"100%",justifyContent:"center",padding:"12px",fontSize:12,borderRadius:8,marginTop:10}}>📋 Copy Entire Week</button>
+        </div>}
+      </div>}
+
+      {!generating&&genMode==="single"&&<div>
+      {workout&&!controlsOpen?<button className="th-btn" onClick={()=>setControlsOpen(true)} style={{...S.btn("ghost"),width:"100%",justifyContent:"center",padding:"10px",marginBottom:8,fontSize:12}}>⚙️ Show Controls</button>:null}
+      {(controlsOpen||!workout)&&<div style={S.card}>
+        <div className="th-sess-btns" style={{display:"flex",gap:6,marginBottom:14}}>{[{id:"lower",l:"🦵 Lower Body"},{id:"upper",l:"💪 Upper Body"},{id:"full",l:"🏋️ Full Body"}].map(s=><button key={s.id} className="th-btn" onClick={()=>setGSess(s.id)} style={{...S.btn(gSess===s.id?"primary":"ghost"),flex:1,justifyContent:"center",padding:"11px 6px",fontSize:14}}>{s.l}</button>)}</div>
+        <button className="th-btn th-gen-main" onClick={()=>genWithAnim()} style={{...S.btn("primary"),width:"100%",justifyContent:"center",padding:"15px",fontSize:16,borderRadius:10,marginBottom:8}}>⚡ Generate Workout</button>
+        <button className="th-btn" onClick={()=>setShowGenSettings(!showGenSettings)} style={{...S.btn("ghost"),width:"100%",justifyContent:"center",padding:"8px",fontSize:11,borderRadius:6}}>{showGenSettings?"▲ Hide Settings":"▼ Workout Settings"} {fmt?`· ${fmt.icon} ${fmt.name} · ~${tm}m`:""}</button>
+        {showGenSettings&&<div style={{marginTop:10}}>
+          <div style={{display:"flex",gap:6,marginBottom:10}}><select value={gFmt} onChange={e=>selectFmt(e.target.value)} className="th-fmt-select" style={{...S.sel,flex:1,fontSize:13,padding:"10px 12px"}}>{formats.map(f=><option key={f.id} value={f.id}>{f.icon} {f.name}</option>)}</select><button onClick={()=>{const f=pickFormat(formats,history);selectFmt(f.id);}} className="th-btn" style={{...S.btn("ghost"),padding:"10px 16px",fontSize:13,whiteSpace:"nowrap"}}>🎲</button></div>
+          {fmt&&<div style={{background:T.surface,borderRadius:8,padding:12,border:`1px solid ${T.border}`}}>
+            <div style={{fontSize:10,color:T.textMuted,fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:".1em",textAlign:"center"}}>{fmt.icon} {fmt.name} — <span style={{color:T.blue,fontFamily:mono}}>~{tm}m</span></div>
+            {fmt.how&&<div style={{fontSize:10,color:T.textDim,textAlign:"center",lineHeight:1.4,marginBottom:10}}>{fmt.how}</div>}
+            {fmt.hasMode&&<div style={{display:"flex",gap:4,marginBottom:10,justifyContent:"center"}}><button className="th-btn" onClick={()=>sgp("mode","timed")} style={{...S.btn(p.mode==="timed"?"primary":"ghost"),padding:"10px 16px",fontSize:13}}>⏱️ Timed</button><button className="th-btn" onClick={()=>sgp("mode","reps")} style={{...S.btn(p.mode==="reps"?"primary":"ghost"),padding:"10px 16px",fontSize:13}}>🔢 Reps</button></div>}
+            {(()=>{const mode=p.mode||"timed";const vis=fmt.fields.filter(f=>!f.mode||f.mode===mode);return <div className="th-params" style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(vis.length,3)},1fr)`,gap:8,justifyItems:"center"}}>{vis.map(f=><NI key={f.k} label={f.l} value={p[f.k]} min={f.min} max={f.max} step={f.step||1} onChange={v=>sgp(f.k,v)}/>)}</div>;})()}
+          </div>}
+        </div>}
+      </div>}</div>}
+
+      {!generating&&workout&&genMode==="single"&&<div>
+        {boardMode?<div className="th-board-mode">
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div><div style={{fontSize:14,fontWeight:800,color:T.white}}>{workout.session==="lower"?"🦵 Lower":workout.session==="upper"?"💪 Upper":"🏋️ Full"} — {workout.fmt.name}</div><div style={{fontSize:11,color:T.textMuted,fontFamily:mono,marginTop:2}}>~{workout.time}m · {workout.params.mode==="reps"?workout.params.reps+" reps":(workout.params.workTime||"?")+"s/"+(workout.params.restTime||"?")+"s"}{workout.params.rounds?" · "+workout.params.rounds+" rnds":""}</div></div>
+            <button className="th-btn" onClick={()=>setBoardMode(false)} style={{...S.btn("ghost"),padding:"8px 14px"}}>✕ Exit</button>
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:T.green,marginBottom:6}}>🎯 {workout.warmup?.name} ({workout.warmup?.dur})</div>
+          {workout.fmt.id==="stations"?(()=>{const ps=workout.params.exPerStn||4;return Array.from({length:workout.params.stations||3},(_,si)=><div key={si}><div style={{fontSize:14,fontWeight:800,color:T.blue,padding:"10px 0 4px"}}>Station {si+1}</div>{workout.exercises.slice(si*ps,(si+1)*ps).map((ex,i)=><div key={i} className="th-board-ex"><span className="th-board-num">{i+1}</span>{ex.name}</div>)}</div>);})()
+          :workout.fmt.id==="supersets"?(()=>{const pp=workout.params.exPerPair||2;return Array.from({length:workout.params.pairs||4},(_,pi)=><div key={pi}><div style={{fontSize:14,fontWeight:800,color:T.blue,padding:"10px 0 4px"}}>Superset {pi+1}</div>{workout.exercises.slice(pi*pp,(pi+1)*pp).map((ex,i)=><div key={i} className="th-board-ex"><span className="th-board-num">{String.fromCharCode(65+i)}</span>{ex.name}</div>)}</div>);})()
+          :workout.exercises.map((ex,i)=><div key={i} className="th-board-ex"><span className="th-board-num">{i+1}</span>{ex.name}</div>)}
+          <div style={{fontSize:11,fontWeight:700,color:T.orange,marginTop:12}}>🏁 {workout.finisher?.name} ({workout.finisher?.dur})</div>
+        </div>
+        :<div style={{...S.card,border:`1px solid ${T.blue}33`}}>
+        <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:6,marginBottom:10}}>
+          <div><div style={{fontSize:10,fontWeight:700,color:T.blue,textTransform:"uppercase",letterSpacing:".12em"}}>TransformHub</div><div style={{fontSize:16,fontWeight:800,color:T.white,marginTop:2}}>{workout.session==="lower"?"🦵 Lower Body":workout.session==="upper"?"💪 Upper Body":"🏋️ Full Body"} — {workout.fmt.name}</div><div style={{fontSize:10,color:T.textMuted,marginTop:3,fontFamily:mono}}>~{workout.time}m workout · ~{workout.totalEst}m class · {workout.date}</div></div>
+          <div className="th-wo-actions" style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"flex-start"}}><button className="th-btn" onClick={()=>genWithAnim()} style={S.btn("ghost")}>↻ Refresh</button><button className="th-btn" onClick={markUsed} style={S.btn("ghost")}>⭐ Save</button></div>
+        </div>
+        <BalanceBar exercises={workout.exercises}/>
+        {workout.clashes?.length>0&&<div style={{background:T.redGlow,borderRadius:6,padding:8,marginTop:8,marginBottom:8,border:`1px solid ${T.red}33`}}><div style={{fontSize:10,fontWeight:700,color:T.red}}>⚠️ Equipment clash{workout.clashes.length>1?"es":""}</div>{workout.clashes.map((c,i)=><div key={i} style={{fontSize:9,color:T.text,marginTop:2}}>{c.eq}: {c.ex1} & {c.ex2}</div>)}</div>}
+        {undoEx&&<div style={{background:T.blueGlow,borderRadius:6,padding:8,marginTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:10,color:T.blue}}>Swapped {undoEx.exercise.name}</span><button className="th-btn" onClick={undoSwap} style={{...S.btn("ghost"),padding:"3px 8px",fontSize:10}}>↩ Undo</button></div>}
+
+        <div style={{background:T.greenGlow,borderRadius:7,padding:"8px 10px",marginTop:8,marginBottom:8,border:`1px solid ${T.green}33`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:T.white}}>{workout.warmup?.name} <span style={{fontSize:9,color:T.green,fontWeight:800}}>WARMUP</span> <span style={{fontSize:9,color:T.textDim,fontFamily:mono}}>{workout.warmup?.dur}</span></div></div>
+            <span onClick={()=>setExpandedId(expandedId==="wu"?null:"wu")} style={{cursor:"pointer",...S.pill}}>{expandedId==="wu"?"Hide ▲":"How to run ▼"}</span>
+            <SwapBtn onClick={()=>{const a=wPick(warmups.filter(w=>w.id!==workout.warmup?.id),1)[0];if(a)setWorkout({...workout,warmup:a});}}/>
+          </div>
+          {expandedId==="wu"&&<div style={{fontSize:11,color:T.textMuted,lineHeight:1.5,marginTop:6,paddingTop:6,borderTop:`1px solid ${T.green}22`}}>{workout.warmup?.desc}</div>}
+        </div>
+
+        <div style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:700,color:T.blue,textTransform:"uppercase",letterSpacing:".1em",marginBottom:6}}>Exercises <span style={{color:T.textDim,fontWeight:500}}>— drag to reorder</span></div>
+          {workout.fmt.id==="stations"?(()=>{const ps=workout.params.exPerStn||4;return Array.from({length:workout.params.stations||3},(_,si)=><div key={si}><div style={{fontSize:10,fontWeight:700,color:T.textMuted,padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>Station {si+1}</div>{workout.exercises.slice(si*ps,(si+1)*ps).map((ex,i)=>renderExRow(ex,si*ps+i))}</div>);})()
+          :workout.fmt.id==="supersets"?(()=>{const pp=workout.params.exPerPair||2;return Array.from({length:workout.params.pairs||4},(_,pi)=><div key={pi}><div style={{fontSize:10,fontWeight:700,color:T.textMuted,padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>Superset {pi+1}</div>{workout.exercises.slice(pi*pp,(pi+1)*pp).map((ex,i)=>renderExRow(ex,pi*pp+i))}</div>);})()
+          :workout.exercises.map((ex,i)=>renderExRow(ex,i))}
+          <div style={{background:T.surface,borderRadius:5,padding:8,marginTop:6,fontSize:10,color:T.textMuted,display:"flex",flexWrap:"wrap",gap:10,fontFamily:mono}}>{workout.params.mode==="reps"?<span>{workout.params.reps} reps/ex</span>:<>{workout.params.workTime&&<span>{workout.params.workTime}s work</span>}</>}{workout.params.restTime&&<span>{workout.params.restTime}s rest</span>}{workout.params.rounds&&<span>{workout.params.rounds} rounds</span>}{workout.params.laps&&<span>{workout.params.laps} laps/stn</span>}{workout.params.roundRest&&<span>{workout.params.roundRest}s rnd rest</span>}{workout.params.stnRest&&<span>{workout.params.stnRest}s stn rest</span>}{workout.params.duration&&<span>{workout.params.duration}m</span>}{workout.params.tabRounds&&<span>{workout.params.tabRounds} tab rnds</span>}{workout.params.buyIn&&<span>In:{workout.params.buyIn}</span>}{workout.params.buyOut&&<span>Out:{workout.params.buyOut}</span>}</div>
+        </div>
+
+        <div style={{background:T.orangeGlow,borderRadius:7,padding:"8px 10px",marginBottom:8,border:`1px solid ${T.orange}33`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:T.white}}>{workout.finisher?.name} <span style={{fontSize:9,color:T.orange,fontWeight:800}}>FINISHER</span> <span style={{fontSize:9,color:T.textDim,fontFamily:mono}}>{workout.finisher?.dur}</span></div></div>
+            <span onClick={()=>setExpandedId(expandedId==="fi"?null:"fi")} style={{cursor:"pointer",...S.pill}}>{expandedId==="fi"?"Hide ▲":"How to run ▼"}</span>
+            <SwapBtn onClick={()=>{const a=wPick(finishers.filter(f=>f.id!==workout.finisher?.id),1)[0];if(a)setWorkout({...workout,finisher:a});}}/>
+          </div>
+          {expandedId==="fi"&&<div style={{fontSize:11,color:T.textMuted,lineHeight:1.5,marginTop:6,paddingTop:6,borderTop:`1px solid ${T.orange}22`}}>{workout.finisher?.desc}</div>}
+        </div>
+
+        <div style={{marginBottom:10}}><textarea className="th-notes-input" placeholder="Notes for this session — e.g. 'Sarah struggled with hip thrusts, swap next time'" value={woNotes} onChange={e=>setWoNotes(e.target.value)} rows={2} style={{...S.inp,resize:"vertical",fontSize:11}} className="th-input"/></div>
+
+        <div className="th-copy-bar" style={{display:"flex",gap:6}}><button className="th-btn" onClick={copyWo} style={{...S.btn(copied?"primary":"ghost"),flex:1,justifyContent:"center",padding:"14px",fontSize:13,borderRadius:8}}>{copied?"✓ Copied":"📋 Copy Full Session"}</button><button className="th-btn" onClick={shareWo} style={{...S.btn("ghost"),padding:"14px 16px",fontSize:11,borderRadius:8}}>🔗 Share</button></div>
+      </div>}
+      <div className="th-float-bar"><button className="th-btn" onClick={markUsed} style={S.btn("primary")}>⭐ Save</button><button className="th-btn" onClick={copyWo} style={S.btn("ghost")}>{copied?"✓":"📋"} Copy</button><button className="th-btn" onClick={()=>setBoardMode(!boardMode)} style={S.btn("ghost")}>{boardMode?"✕":"📋"} Board</button></div>
+      </div>}
+    </div>;};
+
+  // ── FORMATS TAB ──
+  const fmtTab=()=>(<div>
+    <div className="th-toolbar" style={S.toolbar} className="th-toolbar"><div style={{fontSize:14,fontWeight:700,color:T.white}}>📋 Formats</div><span style={{fontSize:10,color:T.textDim,fontFamily:mono}}>{formats.length}</span><button className="th-btn" onClick={()=>setShowAddFmt(true)} style={{...S.btn("primary"),marginLeft:"auto"}}>+ New Format</button></div>
+    {showAddFmt&&<div style={{...S.card,border:`1px solid ${T.blue}44`}}>
+      <div style={{fontSize:14,fontWeight:700,color:T.white,marginBottom:10}}>New Format</div>
+      <div style={{display:"flex",gap:6,marginBottom:8}}><input placeholder="🔥" value={nFmt.icon} onChange={e=>setNFmt({...nFmt,icon:e.target.value})} style={{...S.inp,width:50,textAlign:"center"}}/><input placeholder="Format name (e.g. Pyramid Sets)" value={nFmt.name} onChange={e=>setNFmt({...nFmt,name:e.target.value})} style={{...S.inp,flex:1}}/></div>
+      <input placeholder="Short description (e.g. Progressive reps each round)" value={nFmt.desc} onChange={e=>setNFmt({...nFmt,desc:e.target.value})} style={{...S.inp,marginBottom:8}}/>
+      <div style={{marginBottom:8}}><div style={{fontSize:9,color:T.textMuted,marginBottom:3,fontWeight:600}}>HOW TO RUN</div><div style={{fontSize:9,color:T.textDim,marginBottom:4}}>Explain how to set up and coach this format during a class</div><textarea placeholder="Set up all exercises in order. Start the clock..." value={nFmt.how||""} onChange={e=>setNFmt({...nFmt,how:e.target.value})} rows={2} style={{...S.inp,resize:"vertical",fontSize:11}} className="th-input"/></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:9,color:T.textMuted,marginBottom:4,fontWeight:600}}>EXERCISE MODE</div><div style={{fontSize:9,color:T.textDim,marginBottom:6}}>Timed = work/rest in seconds. Reps = set number of reps per exercise.</div><div style={{display:"flex",gap:6}}><button className="th-btn" onClick={()=>setNFmt({...nFmt,mode:"timed"})} style={{...S.btn(nFmt.mode==="timed"?"primary":"ghost"),flex:1,justifyContent:"center",padding:"10px"}}>⏱️ Timed</button><button className="th-btn" onClick={()=>setNFmt({...nFmt,mode:"reps"})} style={{...S.btn(nFmt.mode==="reps"?"primary":"ghost"),flex:1,justifyContent:"center",padding:"10px"}}>🔢 Reps</button></div></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:9,color:T.textMuted,marginBottom:4,fontWeight:600}}>STRUCTURE</div><div style={{fontSize:9,color:T.textDim,marginBottom:6}}>Set the core structure. Every format needs exercises and rounds at minimum.</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Exercises</div><input type="number" value={nFmt.exercises||8} onChange={e=>setNFmt({...nFmt,exercises:+e.target.value||8})} style={S.inp}/></div>
+        <div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Rounds</div><input type="number" value={nFmt.rounds||3} onChange={e=>setNFmt({...nFmt,rounds:+e.target.value||3})} style={S.inp}/></div>
+        <div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Stations <span style={{color:T.textDim}}>(0 = no stations)</span></div><input type="number" value={nFmt.stations||0} onChange={e=>setNFmt({...nFmt,stations:+e.target.value||0})} style={S.inp}/></div>
+        <div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Exercises per station</div><input type="number" value={nFmt.exPerStn||4} onChange={e=>setNFmt({...nFmt,exPerStn:+e.target.value||4})} style={S.inp}/></div>
+      </div></div>
+      <div style={{marginBottom:10}}><div style={{fontSize:9,color:T.textMuted,marginBottom:4,fontWeight:600}}>TIMING</div><div style={{fontSize:9,color:T.textDim,marginBottom:6}}>Set work and rest periods. Leave at 0 if not applicable.</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {nFmt.mode==="timed"&&<><div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Work time (seconds)</div><input type="number" value={nFmt.workTime||35} onChange={e=>setNFmt({...nFmt,workTime:+e.target.value||35})} style={S.inp}/></div>
+        <div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Rest between exercises (s)</div><input type="number" value={nFmt.restTime||10} onChange={e=>setNFmt({...nFmt,restTime:+e.target.value||10})} style={S.inp}/></div></>}
+        {nFmt.mode==="reps"&&<><div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Reps per exercise</div><input type="number" value={nFmt.reps||10} onChange={e=>setNFmt({...nFmt,reps:+e.target.value||10})} style={S.inp}/></div>
+        <div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Total time (minutes)</div><input type="number" value={nFmt.duration||20} onChange={e=>setNFmt({...nFmt,duration:+e.target.value||20})} style={S.inp}/></div></>}
+        <div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Rest between rounds (s)</div><input type="number" value={nFmt.roundRest||60} onChange={e=>setNFmt({...nFmt,roundRest:+e.target.value||60})} style={S.inp}/></div>
+        {(nFmt.stations||0)>0&&<div><div style={{fontSize:9,color:T.textMuted,marginBottom:2}}>Rest between stations (s)</div><input type="number" value={nFmt.stnRest||45} onChange={e=>setNFmt({...nFmt,stnRest:+e.target.value||45})} style={S.inp}/></div>}
+      </div></div>
+      <div style={{display:"flex",gap:6}}><button className="th-btn" onClick={()=>{if(!nFmt.name)return;const id=nFmt.name.toLowerCase().replace(/[^a-z]/g,"-")+Date.now();const params={exercises:nFmt.exercises||8,rounds:nFmt.rounds||3,mode:nFmt.mode||"timed"};const fields=[];
+        fields.push({k:"exercises",l:"Exercises",min:3,max:16,g:"Structure"});
+        fields.push({k:"rounds",l:"Rounds",min:1,max:10,g:"Structure"});
+        if((nFmt.stations||0)>0){params.stations=nFmt.stations;params.exPerStn=nFmt.exPerStn||4;fields.push({k:"stations",l:"Stations",min:2,max:8,g:"Structure"});fields.push({k:"exPerStn",l:"Ex/Station",min:2,max:6,g:"Structure"});}
+        if(nFmt.mode==="timed"){params.workTime=nFmt.workTime||35;params.restTime=nFmt.restTime||10;fields.push({k:"workTime",l:"Work (s)",min:10,max:60,step:5,g:"Effort"});fields.push({k:"restTime",l:"Rest (s)",min:5,max:30,step:5,g:"Rest"});}
+        else{params.reps=nFmt.reps||10;if(nFmt.duration)params.duration=nFmt.duration;fields.push({k:"reps",l:"Reps",min:3,max:30,g:"Effort"});if(nFmt.duration)fields.push({k:"duration",l:"Duration (min)",min:5,max:40,g:"Timing"});}
+        if(nFmt.roundRest){params.roundRest=nFmt.roundRest;fields.push({k:"roundRest",l:"Round Rest (s)",min:15,max:120,step:15,g:"Rest"});}
+        if((nFmt.stations||0)>0&&nFmt.stnRest){params.stnRest=nFmt.stnRest;fields.push({k:"stnRest",l:"Station Rest (s)",min:15,max:90,step:15,g:"Rest"});}
+        setFormats([...formats,{id,name:nFmt.name,desc:nFmt.desc,how:nFmt.how||"",icon:nFmt.icon||"🔥",rating:3,hasMode:nFmt.mode==="timed",params,fields}]);setNFmt({name:"",desc:"",icon:"🔥",mode:"timed",how:"",exercises:8,rounds:3,stations:0,exPerStn:4,workTime:35,restTime:10,reps:10,duration:20,roundRest:60,stnRest:45});setShowAddFmt(false);showToast("Format created");}} style={{...S.btn("primary"),flex:1,justifyContent:"center",padding:"12px"}}>Create Format</button><button className="th-btn" onClick={()=>setShowAddFmt(false)} style={{...S.btn("ghost"),padding:"12px"}}>Cancel</button></div>
+    </div>}
+    {formats.map(f=>{const p=fp(f.id);const tm=estTime(f,p);const ed=editFmt===f.id;return <div key={f.id} style={{...S.card,border:ed?`1px solid ${T.blue}44`:`1px solid ${T.border}`}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:9}}><span style={{fontSize:18,width:28,textAlign:"center"}}>{f.icon}</span><div><div style={{fontSize:14,fontWeight:700,color:T.white}}>{f.name}</div><div style={{fontSize:10,color:T.textMuted}}>{f.desc}</div>{f.how&&<div style={{fontSize:10,color:T.textDim,marginTop:3,lineHeight:1.4,maxWidth:500}}>{f.how}</div>}</div></div><div style={{display:"flex",alignItems:"center",gap:6}}><span style={{...S.badge(T.blue),fontFamily:mono}}>~{tm}m</span><Stars v={f.rating||3} onChange={r=>setFormats(formats.map(x=>x.id===f.id?{...x,rating:r}:x))} sz={12}/><button className="th-btn" onClick={()=>setEditFmt(ed?null:f.id)} style={{...S.btn("ghost"),padding:"3px 9px",fontSize:10}}>{ed?"Done":"Edit"}</button>{!INIT_FMT.find(x=>x.id===f.id)&&<button className="th-btn" onClick={()=>setFormats(formats.filter(x=>x.id!==f.id))} style={{...S.btn("danger"),padding:"3px 7px",fontSize:10}}>×</button>}</div></div>
+      {ed&&<div style={{marginTop:12}}>
+        <div style={{marginBottom:10}}><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>HOW TO RUN</div><textarea value={f.how||""} onChange={e=>setFormats(formats.map(x=>x.id===f.id?{...x,how:e.target.value}:x))} rows={3} style={{...S.inp,resize:"vertical",fontSize:11}} placeholder="Describe how to set up and run this format..." className="th-input"/></div>
+        {f.hasMode&&<div style={{marginBottom:12}}><div style={{fontSize:8,color:T.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:".12em",marginBottom:6,paddingBottom:4,borderBottom:`1px solid ${T.border}`}}>Mode</div><div style={{display:"flex",gap:6}}><button onClick={()=>sfp(f.id,"mode","timed")} style={{...S.btn(p.mode==="timed"?"primary":"ghost"),flex:1,justifyContent:"center",padding:"8px 10px"}}>⏱️ Timed</button><button onClick={()=>sfp(f.id,"mode","reps")} style={{...S.btn(p.mode==="reps"?"primary":"ghost"),flex:1,justifyContent:"center",padding:"8px 10px"}}>🔢 Reps</button></div></div>}{(()=>{const mode=p.mode||"timed";const groups={};f.fields.filter(fl=>!fl.mode||fl.mode===mode).forEach(fl=>{const g=fl.g||"General";if(!groups[g])groups[g]=[];groups[g].push(fl);});return Object.entries(groups).map(([gN,gF])=>(<div key={gN} style={{marginBottom:12}}><div style={{fontSize:8,color:T.textDim,fontWeight:700,textTransform:"uppercase",letterSpacing:".12em",marginBottom:6,paddingBottom:4,borderBottom:`1px solid ${T.border}`}}>{gN}</div><div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(gF.length,4)},1fr)`,gap:10}}>{gF.map(fl=><NI key={fl.k} label={fl.l} value={p[fl.k]} min={fl.min} max={fl.max} step={fl.step||1} onChange={v=>sfp(f.id,fl.k,v)}/>)}</div></div>));})()}</div>}
+    </div>;})}
+  </div>);
+
+  // ── EXERCISES TAB — with collapsible categories ──
+  const exTab=()=>{
+    const grouped=exFilt.sort==="category";
+    const cats=grouped?[...new Set(filtEx.map(e=>`${e.category} → ${e.subcategory}`))]:[];
+    return (<div>
+    <div className="th-toolbar" style={S.toolbar} className="th-toolbar"><div style={{fontSize:14,fontWeight:700,color:T.white}}>🏋️ Exercises</div><span style={{fontSize:10,color:T.textDim,fontFamily:mono}}>{filtEx.length}</span>
+      <input placeholder="Search..." value={exFilt.q} onChange={e=>setExFilt({...exFilt,q:e.target.value})} style={{...S.inp,maxWidth:140,flex:"0 0 auto"}} className="th-input"/>
+      <select value={exFilt.type} onChange={e=>setExFilt({...exFilt,type:e.target.value})} style={S.sel}><option value="all">⚡ Type: All</option><option value="resistance">💪 Resistance</option><option value="cardio">🔥 Cardio</option></select>
+      <select value={exFilt.cat} onChange={e=>setExFilt({...exFilt,cat:e.target.value})} style={S.sel}><option value="all">🏋️ Body: All</option><option value="Lower Body">🦵 Lower Body</option><option value="Upper Body">💪 Upper Body</option><option value="Core">🎯 Core</option></select>
+      <select value={exFilt.sub||"all"} onChange={e=>setExFilt({...exFilt,sub:e.target.value})} style={S.sel}><option value="all">📍 Muscle: All</option>{exFilt.cat!=="all"?CATEGORIES[exFilt.cat].map(s=><option key={s} value={s}>{s}</option>):Object.values(CATEGORIES).flat().map(s=><option key={s} value={s}>{s}</option>)}</select>
+      <select value={exFilt.sort} onChange={e=>setExFilt({...exFilt,sort:e.target.value})} style={S.sel}><option value="name">↕ Sort: A-Z</option><option value="rating">↕ Sort: Rating</option><option value="used">↕ Sort: Most Used</option><option value="recent">↕ Sort: Recent</option><option value="category">↕ Sort: Category</option></select>
+      <button className="th-btn" onClick={()=>setShowAddEx(true)} style={{...S.btn("primary"),marginLeft:"auto"}}>+ Add</button>
+    </div>
+    {showAddEx&&<div style={{...S.card,border:`1px solid ${T.blue}44`}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}><input placeholder="Name" value={nEx.name} onChange={e=>setNEx({...nEx,name:e.target.value})} style={S.inp}/><select value={nEx.category} onChange={e=>{const c=e.target.value;setNEx({...nEx,category:c,subcategory:CATEGORIES[c][0]});}} style={S.sel}>{Object.keys(CATEGORIES).map(c=><option key={c}>{c}</option>)}</select><select value={nEx.subcategory} onChange={e=>setNEx({...nEx,subcategory:e.target.value})} style={S.sel}>{CATEGORIES[nEx.category].map(s=><option key={s}>{s}</option>)}</select><select value={nEx.type} onChange={e=>setNEx({...nEx,type:e.target.value})} style={S.sel}><option value="resistance">Resistance</option><option value="cardio">Cardio</option></select></div>
+      <div style={{marginBottom:6}}><div style={{fontSize:9,color:T.textMuted,marginBottom:3,fontWeight:700}}>EQUIPMENT</div><div style={{display:"flex",flexWrap:"wrap",gap:2}}>{EQUIPMENT.map(eq=><span key={eq} onClick={()=>setNEx({...nEx,equipment:nEx.equipment.includes(eq)?nEx.equipment.filter(x=>x!==eq):[...nEx.equipment,eq]})} style={S.tag(nEx.equipment.includes(eq))}>{eq}</span>)}</div></div>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><span style={{fontSize:10,color:T.textMuted}}>Rating:</span><Stars v={nEx.rating} onChange={r=>setNEx({...nEx,rating:r})}/></div>
+      <div style={{display:"flex",gap:5,alignItems:"center"}}><button className="th-btn" onClick={()=>{if(!nEx.name.trim())return;const newEx=mk(nEx.name,nEx.category,nEx.subcategory,nEx.equipment,nEx.type,nEx.rating);setExercises([...exercises,newEx]);if(!keepAddOpen)setShowAddEx(false);else setNEx({...nEx,name:""});showToast("Added "+nEx.name);}} style={S.btn("primary")}>Save</button><button className="th-btn" onClick={()=>setShowAddEx(false)} style={S.btn("ghost")}>Cancel</button><label style={{fontSize:10,color:T.textMuted,display:"flex",alignItems:"center",gap:4,marginLeft:10,cursor:"pointer"}}><input type="checkbox" checked={keepAddOpen} onChange={e=>setKeepAddOpen(e.target.checked)} style={{accentColor:T.blue}}/>Keep adding</label></div>
+    </div>}
+    <div style={{background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+      {grouped?cats.map(cat=>{const catExs=filtEx.filter(e=>`${e.category} → ${e.subcategory}`===cat);const collapsed=collapsedCats[cat];return <div key={cat}>
+        <div onClick={()=>setCollapsedCats({...collapsedCats,[cat]:!collapsed})} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.card,borderBottom:`1px solid ${T.border}`,cursor:"pointer"}}><Chev open={!collapsed}/><div style={{fontSize:11,fontWeight:700,color:T.white}}>{cat}</div><span style={{fontSize:9,color:T.textDim,fontFamily:mono}}>{catExs.length}</span></div>
+        {!collapsed&&catExs.map(ex=>renderExListRow(ex))}
+      </div>;}):filtEx.map(ex=>renderExListRow(ex))}
+    </div></div>);
+  };
+
+  const renderExListRow=(ex)=>(<div key={ex.id}>
+    <div className="th-ex-row" onClick={()=>setExpandedId(expandedId===ex.id?null:ex.id)} style={{display:"flex",alignItems:"center",padding:"10px 12px",gap:8,borderBottom:`1px solid ${T.border}22`,fontSize:13,cursor:"pointer",background:expandedId===ex.id?T.blueGlow:"transparent",transition:"background .15s"}}>
+      <Chev open={expandedId===ex.id}/>
+      <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.white}}>{ex.name}</div><div style={{fontSize:9,color:T.textDim}}>{ex.category} → {ex.subcategory} · {ex.equipment.slice(0,2).join(", ")}{ex.equipment.length>2?"...":""}</div></div>
+      <span style={{...S.badge(ex.type==="cardio"?T.orange:T.blue),fontSize:8}}>{ex.type==="cardio"?"CARDIO":"RESISTANCE"}</span>
+      <div style={{textAlign:"center",minWidth:28}}><div style={{fontSize:10,fontWeight:700,color:T.white,fontFamily:mono}}>{ex.usedCount}</div><div style={{fontSize:7,color:T.textDim}}>USES</div></div>
+      <div style={{textAlign:"center",minWidth:40}}><div style={{fontSize:9,color:ex.lastUsed?T.text:T.textDim,fontFamily:mono}}>{fmtDate(ex.lastUsed)}</div><div style={{fontSize:7,color:T.textDim}}>LAST</div></div>
+      <Stars v={ex.rating} onChange={r=>{r&&updEx(ex.id,{rating:r});}} sz={11}/>
+    </div>
+    {expandedId===ex.id&&<div style={{padding:"10px 14px",background:T.card,borderBottom:`1px solid ${T.border}22`}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+        <div><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>NAME</div><input value={ex.name} onChange={e=>updEx(ex.id,{name:e.target.value})} style={S.inp} className="th-input"/></div>
+        <div><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>TYPE</div><select value={ex.type} onChange={e=>updEx(ex.id,{type:e.target.value})} style={{...S.sel,width:"100%"}}><option value="resistance">Resistance</option><option value="cardio">Cardio</option></select></div>
+        <div><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>CATEGORY</div><select value={ex.category} onChange={e=>updEx(ex.id,{category:e.target.value,subcategory:CATEGORIES[e.target.value][0]})} style={{...S.sel,width:"100%"}}>{Object.keys(CATEGORIES).map(c=><option key={c}>{c}</option>)}</select></div>
+        <div><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>SUBCATEGORY</div><select value={ex.subcategory} onChange={e=>updEx(ex.id,{subcategory:e.target.value})} style={{...S.sel,width:"100%"}}>{(CATEGORIES[ex.category]||[]).map(s=><option key={s}>{s}</option>)}</select></div>
+      </div>
+      <div style={{marginBottom:8}}><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>EQUIPMENT</div><div style={{display:"flex",flexWrap:"wrap",gap:2}}>{EQUIPMENT.map(eq=><span key={eq} onClick={()=>updEx(ex.id,{equipment:ex.equipment.includes(eq)?ex.equipment.filter(x=>x!==eq):[...ex.equipment,eq]})} style={S.tag(ex.equipment.includes(eq))}>{eq}</span>)}</div></div>
+      <div style={{marginBottom:8}}><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>GYM ZONE</div><select value={ex.zone||""} onChange={e=>updEx(ex.id,{zone:e.target.value})} style={S.sel}>{zones.sort((a,b)=>a.order-b.order).map(z=><option key={z.id} value={z.id}>{z.name}</option>)}</select></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:9,color:T.textMuted}}>Rating:</span><Stars v={ex.rating} onChange={r=>updEx(ex.id,{rating:r})}/></div>
+        {confirmDel===ex.id?<div style={{display:"flex",gap:3}}><button className="th-btn" onClick={()=>{setExercises(exercises.filter(e=>e.id!==ex.id));setConfirmDel(null);setExpandedId(null);}} style={{...S.btn("danger"),padding:"4px 10px",fontSize:10}}>Yes, delete</button><button className="th-btn" onClick={()=>setConfirmDel(null)} style={{...S.btn("ghost"),padding:"4px 10px",fontSize:10}}>Cancel</button></div>:<button className="th-btn" onClick={()=>setConfirmDel(ex.id)} style={{...S.btn("danger"),padding:"4px 10px",fontSize:10}}>Delete</button>}
+      </div>
+    </div>}
+  </div>);
+
+  // ── WARMUPS/FINISHERS TAB — with sort/filter ──
+  const wfTab=()=>{
+    const sec=(items,setItems,type,show,setShow)=>{const sorted=sortWF(items);return (<div style={{marginBottom:20}}>
+      <div className="th-toolbar" style={S.toolbar} className="th-toolbar"><div style={{fontSize:14,fontWeight:700,color:T.white}}>{type==="warmup"?"🎯 Warmup Games":"🏁 Finishers"}</div><span style={{fontSize:10,color:T.textDim,fontFamily:mono}}>{sorted.length}</span>
+        <input placeholder="Search..." value={wfSearch} onChange={e=>setWfSearch(e.target.value)} style={{...S.inp,maxWidth:140,flex:"0 0 auto"}} className="th-input"/>
+        <select value={wfSort} onChange={e=>setWfSort(e.target.value)} style={S.sel}><option value="name">A-Z</option><option value="rating">Rating ↓</option><option value="used">Most Used</option><option value="recent">Recent</option><option value="duration">Duration</option></select>
+        <button className="th-btn" onClick={()=>setShow(true)} style={{...S.btn("primary"),marginLeft:"auto"}}>+ Add</button>
+      </div>
+      {show&&<div style={{...S.card,border:`1px solid ${T.blue}44`}}><input placeholder="Name" value={nItem.name} onChange={e=>setNItem({...nItem,name:e.target.value})} style={{...S.inp,marginBottom:5}}/><textarea placeholder="Description — how to set up and run" value={nItem.desc} onChange={e=>setNItem({...nItem,desc:e.target.value})} rows={3} style={{...S.inp,marginBottom:5,resize:"vertical"}}/><input placeholder="Duration (e.g. 5-7 min)" value={nItem.dur} onChange={e=>setNItem({...nItem,dur:e.target.value})} style={{...S.inp,marginBottom:6}}/><div style={{display:"flex",gap:5}}><button className="th-btn" onClick={()=>{if(!nItem.name.trim())return;setItems([...items,{id:`${type}-${Date.now()}`,name:nItem.name,desc:nItem.desc,dur:nItem.dur,rating:3,minDur:parseInt(nItem.dur)||5,maxDur:parseInt(nItem.dur.split("-").pop())||5,usedCount:0,lastUsed:null}]);setNItem({name:"",desc:"",dur:""});setShow(false);showToast("Added "+nItem.name);}} style={S.btn("primary")}>Save</button><button className="th-btn" onClick={()=>setShow(false)} style={S.btn("ghost")}>Cancel</button></div></div>}
+      <div style={{background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,overflow:"hidden"}}>{sorted.map((it,i)=><div key={it.id}>
+        <div className="th-ex-row" onClick={()=>setExpandedId(expandedId===it.id?null:it.id)} style={{display:"flex",alignItems:"center",padding:"10px 12px",gap:8,borderBottom:`1px solid ${T.border}22`,fontSize:13,cursor:"pointer",background:expandedId===it.id?T.blueGlow:"transparent",transition:"background .15s"}}>
+          <Chev open={expandedId===it.id}/>
+          <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,color:T.white}}>{it.name}</div><div style={{fontSize:9,color:T.textDim,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:300}}>{it.desc}</div></div>
+          <span style={{fontSize:9,color:T.textDim,fontFamily:mono,whiteSpace:"nowrap"}}>{it.dur}</span>
+          <div className="th-compact-stats" style={{textAlign:"center",minWidth:28}}><div style={{fontSize:10,fontWeight:700,color:T.white,fontFamily:mono}}>{it.usedCount||0}</div><div style={{fontSize:7,color:T.textDim}}>USES</div></div>
+          <div className="th-compact-stats" style={{textAlign:"center",minWidth:40}}><div style={{fontSize:9,color:it.lastUsed?T.text:T.textDim,fontFamily:mono}}>{fmtDate(it.lastUsed)}</div><div style={{fontSize:7,color:T.textDim}}>LAST</div></div>
+          <Stars v={it.rating} onChange={r=>{if(r)setItems(items.map(x=>x.id===it.id?{...x,rating:r}:x));}} sz={11}/>
+        </div>
+        {expandedId===it.id&&<div style={{padding:"10px 14px",background:T.card,borderBottom:`1px solid ${T.border}22`}}>
+          <div style={{fontSize:10,color:T.textMuted,marginBottom:8,lineHeight:1.4}}>{it.desc}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+            <div><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>NAME</div><input value={it.name} onChange={e=>setItems(items.map(x=>x.id===it.id?{...x,name:e.target.value}:x))} style={S.inp} className="th-input"/></div>
+            <div><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>DURATION</div><input value={it.dur} onChange={e=>setItems(items.map(x=>x.id===it.id?{...x,dur:e.target.value}:x))} style={S.inp} className="th-input"/></div>
+          </div>
+          <div style={{marginBottom:8}}><div style={{fontSize:9,color:T.textMuted,fontWeight:700,marginBottom:3}}>DESCRIPTION</div><textarea value={it.desc} onChange={e=>setItems(items.map(x=>x.id===it.id?{...x,desc:e.target.value}:x))} rows={3} style={{...S.inp,resize:"vertical"}}/></div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:9,color:T.textMuted}}>Rating:</span><Stars v={it.rating} onChange={r=>setItems(items.map(x=>x.id===it.id?{...x,rating:r}:x))}/></div>
+            {confirmDel===it.id?<div style={{display:"flex",gap:3}}><button className="th-btn" onClick={()=>{setItems(items.filter(x=>x.id!==it.id));setConfirmDel(null);setExpandedId(null);}} style={{...S.btn("danger"),padding:"4px 10px",fontSize:10}}>Yes, delete</button><button className="th-btn" onClick={()=>setConfirmDel(null)} style={{...S.btn("ghost"),padding:"4px 10px",fontSize:10}}>Cancel</button></div>:<button className="th-btn" onClick={()=>setConfirmDel(it.id)} style={{...S.btn("danger"),padding:"4px 10px",fontSize:10}}>Delete</button>}
+          </div>
+        </div>}
+      </div>)}</div>
+    </div>);};
+    return <div>
+      <div style={{display:"flex",gap:0,marginBottom:12,background:T.surface,borderRadius:8,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+        <button className="th-btn" onClick={()=>setWfActive("warmup")} style={{flex:1,padding:"12px",fontSize:13,fontWeight:700,fontFamily:font,cursor:"pointer",border:"none",background:wfActive==="warmup"?T.blue:"transparent",color:wfActive==="warmup"?"#fff":T.textMuted,transition:"all .15s"}}>🎯 Warmup Games</button>
+        <button className="th-btn" onClick={()=>setWfActive("finisher")} style={{flex:1,padding:"12px",fontSize:13,fontWeight:700,fontFamily:font,cursor:"pointer",border:"none",borderLeft:`1px solid ${T.border}`,background:wfActive==="finisher"?T.blue:"transparent",color:wfActive==="finisher"?"#fff":T.textMuted,transition:"all .15s"}}>🏁 Finishers</button>
+      </div>
+      {wfActive==="warmup"&&sec(warmups,setWarmups,"warmup",showAddWu,setShowAddWu)}
+      {wfActive==="finisher"&&sec(finishers,setFinishers,"finisher",showAddFi,setShowAddFi)}
+    </div>;
+  };
+
+  // ── SETTINGS TAB (merged: Gym Layout + Schedule + Data) ──
+  const togSet=(k)=>setSettingsOpen(p=>({...p,[k]:!p[k]}));
+  const settingsTab=()=>{
+    const allDays=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+    const sessTypes=[{id:"lower",l:"🦵 Lower Body"},{id:"upper",l:"💪 Upper Body"},{id:"full",l:"🏋️ Full Body"}];
+    const emojiMap={lower:"🦵",upper:"💪",full:"🏋️"};
+    return (<div>
+      <div style={{...S.card,border:`1px solid ${T.blue}33`}}>
+        <div onClick={()=>togSet("schedule")} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div><div style={{fontSize:14,fontWeight:700,color:T.white}}>📅 Weekly Schedule</div><div style={{fontSize:10,color:T.textMuted,marginTop:2}}>Set which days the gym runs and session types</div></div><Chev open={settingsOpen.schedule}/></div>
+        {settingsOpen.schedule&&<div style={{marginTop:14}}>
+        {schedule.map((s,i)=>(<div key={i} style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}><select value={s.day} onChange={e=>{const ns=[...schedule];ns[i]={...ns[i],day:e.target.value};setSchedule(ns);}} style={{...S.sel,width:130}}>{allDays.map(d=><option key={d} value={d}>{d}</option>)}</select><select value={s.sess} onChange={e=>{const ns=[...schedule];ns[i]={...ns[i],sess:e.target.value,emoji:emojiMap[e.target.value]};setSchedule(ns);}} style={{...S.sel,flex:1}}>{sessTypes.map(t=><option key={t.id} value={t.id}>{t.l}</option>)}</select><button className="th-btn" onClick={()=>setSchedule(schedule.filter((_,j)=>j!==i))} style={{...S.btn("danger"),padding:"6px 10px",fontSize:10}}>×</button></div>))}
+        <button className="th-btn" onClick={()=>setSchedule([...schedule,{day:"Tuesday",sess:"full",emoji:"🏋️"}])} style={{...S.btn("ghost"),fontSize:10,marginTop:4}}>+ Add Day</button>
+        </div>}
+      </div>
+      <div style={{...S.card}}>
+        <div onClick={()=>togSet("zones")} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div><div style={{fontSize:14,fontWeight:700,color:T.white}}>🏢 Gym Layout — Zone Order</div><div style={{fontSize:10,color:T.textMuted,marginTop:2}}>Define zones for exercise ordering</div></div><Chev open={settingsOpen.zones}/></div>
+        {settingsOpen.zones&&<div style={{marginTop:14}}>
+        {zones.sort((a,b)=>a.order-b.order).map((z,i)=>(<div key={z.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+          <span style={{width:24,height:24,borderRadius:"50%",background:T.surface,border:`1px solid ${T.border}`,color:T.blue,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,fontFamily:mono,flexShrink:0}}>{i+1}</span>
+          <input value={z.name} onChange={e=>{const nz=[...zones];const idx=nz.findIndex(x=>x.id===z.id);nz[idx]={...nz[idx],name:e.target.value};setZones(nz);}} style={{...S.inp,flex:1}} className="th-input"/>
+          <button className="th-btn" onClick={()=>{if(i>0){const nz=[...zones].sort((a,b)=>a.order-b.order);const temp=nz[i].order;nz[i].order=nz[i-1].order;nz[i-1].order=temp;setZones(nz);}}} style={{...S.btn("ghost"),padding:"4px 8px",fontSize:11,opacity:i===0?0.3:1}}>↑</button>
+          <button className="th-btn" onClick={()=>{const sorted=[...zones].sort((a,b)=>a.order-b.order);if(i<sorted.length-1){const nz=[...zones];const i1=nz.findIndex(x=>x.id===sorted[i].id);const i2=nz.findIndex(x=>x.id===sorted[i+1].id);const t=nz[i1].order;nz[i1].order=nz[i2].order;nz[i2].order=t;setZones(nz);}}} style={{...S.btn("ghost"),padding:"4px 8px",fontSize:11,opacity:i===zones.length-1?0.3:1}}>↓</button>
+          <button className="th-btn" onClick={()=>setZones(zones.filter(x=>x.id!==z.id))} style={{...S.btn("danger"),padding:"4px 8px",fontSize:10}}>×</button>
+          <span style={{fontSize:9,color:T.textDim,minWidth:20}}>{exercises.filter(e=>e.zone===z.id).length}</span>
+        </div>))}
+        <button className="th-btn" onClick={()=>setZones([...zones,{id:"z"+Date.now(),name:"New Zone",order:zones.length+1}])} style={{...S.btn("ghost"),fontSize:10,marginTop:8}}>+ Add Zone</button>
+        </div>}
+      </div>
+      <div style={{...S.card}}>
+        <div onClick={()=>togSet("bulk")} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div><div style={{fontSize:14,fontWeight:700,color:T.white}}>📍 Bulk Zone Assignment</div><div style={{fontSize:10,color:T.textMuted,marginTop:2}}>Move equipment groups to zones at once</div></div><Chev open={settingsOpen.bulk}/></div>
+        {settingsOpen.bulk&&<div style={{marginTop:10}}>
+        {EQUIPMENT.map(eq=>{const count=exercises.filter(e=>e.equipment.includes(eq)).length;if(!count)return null;return <div key={eq} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:11,color:T.white,minWidth:120}}>{eq} <span style={{color:T.textDim,fontSize:9}}>({count})</span></span><select onChange={e=>{if(!e.target.value)return;setExercises(exercises.map(ex=>ex.equipment.includes(eq)?{...ex,zone:e.target.value}:ex));showToast(`${count} exercises moved`);e.target.value="";}} style={{...S.sel,fontSize:10}} defaultValue=""><option value="">Move to zone...</option>{zones.sort((a,b)=>a.order-b.order).map(z=><option key={z.id} value={z.id}>{z.name}</option>)}</select></div>;})}
+      </div>}
+      </div>
+      <div style={{...S.card}}>
+        <div onClick={()=>togSet("data")} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div><div style={{fontSize:14,fontWeight:700,color:T.white}}>🗄️ Data Management</div><div style={{fontSize:10,color:T.textMuted,marginTop:2}}>Reset or clear data</div></div><Chev open={settingsOpen.data}/></div>
+        {settingsOpen.data&&<div style={{marginTop:10}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><button className="th-btn" onClick={()=>{if(window.confirm("Reset exercises to defaults?")){setExercises(INIT_EX);showToast("Exercises reset");}}} style={{...S.btn("danger"),fontSize:10}}>Reset Exercises</button><button className="th-btn" onClick={()=>{if(window.confirm("Reset warmups & finishers?")){setWarmups(INIT_WU);setFinishers(INIT_FI);showToast("Reset");}}} style={{...S.btn("danger"),fontSize:10}}>Reset Warm-ups</button><button className="th-btn" onClick={()=>{if(window.confirm("Reset formats?")){setFormats(INIT_FMT);setFmtParams({});showToast("Formats reset");}}} style={{...S.btn("danger"),fontSize:10}}>Reset Formats</button><button className="th-btn" onClick={()=>{if(window.confirm("Clear ALL data? Cannot undo.")){localStorage.clear();window.location.reload();}}} style={{...S.btn("danger"),fontSize:10}}>⚠️ Factory Reset</button></div>
+      </div>}
+      </div>
+    </div>);
+  };
+
+    // ── SAVED TAB ──
+  const savedTab=()=>(<div>
+    <div style={S.toolbar} className="th-toolbar"><div style={{fontSize:14,fontWeight:700,color:T.white}}>⭐ Saved Workouts</div><span style={{fontSize:10,color:T.textDim,fontFamily:mono}}>{history.length}</span></div>
+    {history.length===0&&<div style={{color:T.textDim,fontSize:12,padding:30,textAlign:"center"}}>No saved workouts yet. Generate a workout and tap ⭐ Save to keep it here.</div>}
+    {history.map((h,i)=><div key={i} style={{...S.card,padding:"10px 12px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:T.white}}>{h.session==="lower"?"🦵 Lower":h.session==="upper"?"💪 Upper":"🏋️ Full"} — {h.fmt?.name||"?"}</div>
+      <div style={{fontSize:9,color:T.textMuted,fontFamily:mono}}>{h.date} · ~{h.time}m</div>
+      <div style={{fontSize:9,color:T.textDim,marginTop:3}}>{(h.exercises||[]).map(e=>e.name).join(" → ")}</div>
+      {h.notes&&<div style={{fontSize:9,color:T.text,marginTop:4,fontStyle:"italic",padding:"4px 6px",background:T.surface,borderRadius:4}}>📝 {h.notes}</div>}
+      <div style={{display:"flex",gap:4,marginTop:6}}>
+        <button className="th-btn" onClick={()=>{copyToClip(buildCopyText(h)).then(()=>showToast("Copied"));}} style={{...S.btn("ghost"),padding:"4px 10px",fontSize:10}}>📋 Copy</button>
+        <button className="th-btn" onClick={()=>{setWorkout(h);setWoNotes(h.notes||"");setTab("generate");setGenMode("single");setControlsOpen(false);}} style={{...S.btn("ghost"),padding:"4px 10px",fontSize:10}}>Load</button>
+        {confirmDel===("h"+i)?<div style={{display:"flex",gap:3}}><button className="th-btn" onClick={()=>{setHistory(history.filter((_,j)=>j!==i));setConfirmDel(null);}} style={{...S.btn("danger"),padding:"3px 8px",fontSize:9}}>Delete</button><button className="th-btn" onClick={()=>setConfirmDel(null)} style={{...S.btn("ghost"),padding:"3px 8px",fontSize:9}}>No</button></div>:<button className="th-btn" onClick={()=>setConfirmDel("h"+i)} style={{background:"none",border:"none",cursor:"pointer",color:T.textDim,fontSize:10,padding:3}}>×</button>}
+      </div>
+    </div>)}
+    {history.length>0&&<button className="th-btn" onClick={()=>{if(window.confirm("Clear all saved workouts?"))setHistory([]);}} style={{...S.btn("danger"),width:"100%",justifyContent:"center",marginTop:8,fontSize:10}}>Clear All</button>}
+  </div>);
+  const tabs=[{id:"generate",l:"⚡ Generator"},{id:"formats",l:"📋 Formats"},{id:"warmfin",l:"🎯 Warmups"},{id:"exercises",l:"🏋️ Exercises"},{id:"saved",l:"⭐ Saved"},{id:"settings",l:"⚙️ Settings"}];
+  const touchRef=useRef({x:0,y:0});
+  const handleTouchStart=(e)=>{touchRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY};};
+  const handleTouchEnd=(e)=>{const dx=e.changedTouches[0].clientX-touchRef.current.x;const dy=e.changedTouches[0].clientY-touchRef.current.y;if(Math.abs(dx)>80&&Math.abs(dx)>Math.abs(dy)*1.5){const tabIds=tabs.map(t=>t.id);const ci=tabIds.indexOf(tab);if(dx<0&&ci<tabIds.length-1)setTab(tabIds[ci+1]);if(dx>0&&ci>0)setTab(tabIds[ci-1]);}};
+  return <div style={{fontFamily:font,background:T.bg,minHeight:"100vh",color:T.text}}>
+
+    {toast&&<div className="th-toast">{toast}</div>}
+    
+    <div className="th-header" style={{background:`linear-gradient(135deg,${T.surface},${T.bg})`,padding:"14px 20px",borderBottom:`1px solid ${T.border}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:14,maxWidth:960,margin:"0 auto"}}>
+        <span className="th-header-title" style={{fontSize:20,fontWeight:800,color:T.white,letterSpacing:".04em"}}>TRANSFORM HUB</span>
+        <span className="th-header-sub" style={{fontSize:10,color:T.textMuted,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",borderLeft:`1px solid ${T.border}`,paddingLeft:14}}>Workout Builder</span>
+        <button className="th-btn" onClick={()=>setTab("saved")} style={{...S.btn("ghost"),padding:"6px 10px",fontSize:11,marginLeft:"auto"}}>⭐ Saved {history.length>0&&<span style={{...S.badge(T.blue),marginLeft:2}}>{history.length}</span>}</button>
+      </div>
+    </div>
+    <div className="th-top-tabs" style={{background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:10}}><div style={{display:"flex",maxWidth:960,margin:"0 auto",overflow:"auto"}}>{tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"11px 18px",fontSize:12,fontWeight:tab===t.id?700:500,fontFamily:font,color:tab===t.id?T.blue:T.textMuted,background:"none",border:"none",cursor:"pointer",borderBottom:`2px solid ${tab===t.id?T.blue:"transparent"}`,transition:"all .15s",letterSpacing:".02em",whiteSpace:"nowrap"}}>{t.l}</button>)}</div></div>
+    <div style={{maxWidth:960,margin:"0 auto",padding:"14px 20px",paddingBottom:70}}>{tab==="generate"&&genTab()}{tab==="formats"&&fmtTab()}{tab==="exercises"&&exTab()}{tab==="warmfin"&&wfTab()}{tab==="saved"&&savedTab()}{tab==="settings"&&settingsTab()}</div>
+    <div className="th-bottom-nav" style={{position:"fixed",bottom:0,left:0,right:0,background:T.bg,borderTop:`1px solid ${T.border}`,zIndex:50}}>
+      <div style={{display:"flex",width:"100%",gap:4,padding:"8px 12px max(8px, env(safe-area-inset-bottom))"}}>
+        {[{id:"generate",icon:"⚡",label:"Generate"},{id:"formats",icon:"📋",label:"Formats"},{id:"warmfin",icon:"🎯",label:"Warmups"},{id:"exercises",icon:"🏋️",label:"Exercises"},{id:"settings",icon:"⚙️",label:"Settings"}].map(t=>
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"10px 12px 8px",background:tab===t.id?T.blueGlow:"none",border:tab===t.id?`1px solid ${T.blue}44`:"1px solid transparent",borderRadius:12,cursor:"pointer",color:tab===t.id?T.blue:T.textMuted,fontFamily:font,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,transition:"all .15s",minHeight:54}}>
+            <span style={{fontSize:20,lineHeight:1}}>{t.icon}</span>
+            <span style={{fontSize:10,fontWeight:tab===t.id?700:400}}>{t.label}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  </div>;
+}
+try{ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));}catch(e){document.getElementById('error').style.display='block';document.getElementById('error').textContent='RENDER: '+e.message;}
+</script>
+<script>
+var{useState,useMemo,useCallback,useRef,useEffect}=React;
+try{var c=document.getElementById('app-code').textContent;var o=Babel.transform(c,{presets:['react']});new Function('React','ReactDOM','useState','useMemo','useCallback','useRef','useEffect',o.code)(React,ReactDOM,useState,useMemo,useCallback,useRef,useEffect);}catch(e){document.getElementById('error').style.display='block';document.getElementById('error').textContent=e.message+'\n\n'+e.stack;}
+</script>
+</body>
+</html>
